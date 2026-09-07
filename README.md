@@ -1,6 +1,6 @@
 # Kulturbytes Publisher
 
-Teile Kulturbytes-Veranstaltungen auf Facebook und Mastodon. Du wählst die
+Teile Kulturbytes-Veranstaltungen auf Facebook, Mastodon und Instagram. Du wählst die
 gewünschten Termine im Terminal aus, siehst eine Vorschau und bestätigst jeden
 Beitrag vor der Veröffentlichung. So behältst du die Kontrolle darüber, was
 auf deiner Seite oder deinem Konto erscheint.
@@ -11,12 +11,13 @@ Wähle die Anleitung für deine Plattform:
 |---|---|
 | [Facebook](facebook/README.md) | Veranstaltungsbeiträge auf einer Facebook-Seite veröffentlichen |
 | [Mastodon](mastodon/README.md) | Veranstaltungsbeiträge auf einem Mastodon-Konto veröffentlichen |
+| [Instagram](instagram/README.md) | Veranstaltungsbilder auf einem Instagram-Professional-Konto veröffentlichen |
 
 ## Voraussetzungen
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
 Für deine Plattform benötigst du außerdem die in der jeweiligen Anleitung
-beschriebenen Zugangsdaten. Behalte den gesamten Repository-Ordner, da beide
+beschriebenen Zugangsdaten. Behalte den gesamten Repository-Ordner, da alle
 Publisher das Paket in `common/` verwenden.
 
 ## Schnellstart
@@ -27,10 +28,11 @@ Publisher das Paket in `common/` verwenden.
 uv sync --all-packages
 ```
 
-Öffne danach die [Facebook-Anleitung](facebook/README.md#schnellstart) oder die
-[Mastodon-Anleitung](mastodon/README.md#schnellstart). Dort findest du die
+Öffne danach die [Facebook-Anleitung](facebook/README.md#schnellstart),
+[Mastodon-Anleitung](mastodon/README.md#schnellstart) oder
+[Instagram-Anleitung](instagram/README.md#schnellstart). Dort findest du die
 Befehle zum Setzen deiner Zugangsdaten und für deine erste Vorschau.
-Die Installation ist für beide Plattformen gemeinsam und muss nur einmal
+Die Installation ist für alle Plattformen gemeinsam und muss nur einmal
 ausgeführt werden.
 
 Bei der ersten Auswahl gibst du beispielsweise `1` oder `1,3-5` ein.
@@ -39,14 +41,15 @@ Der Standardmodus zeigt nur eine Vorschau.
 
 ## Konfiguration
 
-Beide Publisher lesen ihre Einstellungen aus Umgebungsvariablen. Die
+Alle Publisher lesen ihre Einstellungen aus Umgebungsvariablen. Die
 plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 
 - [Facebook konfigurieren](facebook/README.md#konfiguration)
 - [Mastodon konfigurieren](mastodon/README.md#konfiguration)
+- [Instagram konfigurieren](instagram/README.md#zugangsdaten-und-veröffentlichung)
 
-Die erforderlichen Zugangsdaten müssen auch für den Vorschau-Modus und die
-Befehlshilfe gesetzt sein. `.env`-Dateien werden nicht automatisch geladen.
+Bei Facebook und Mastodon müssen die Zugangsdaten auch für Vorschau und
+Befehlshilfe gesetzt sein. Instagram benötigt sie erst für `--publish`. `.env`-Dateien werden nicht automatisch geladen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
 
 ## Termine auswählen und veröffentlichen
@@ -63,6 +66,13 @@ Für Mastodon, ebenfalls ausgehend vom Repository-Hauptordner:
 
 ```bash
 cd mastodon
+uv run main.py --dry-run --limit 10
+```
+
+Für Instagram, ebenfalls ausgehend vom Repository-Hauptordner:
+
+```bash
+cd instagram
 uv run main.py --dry-run --limit 10
 ```
 
@@ -92,7 +102,8 @@ Timer-Läufe.
 | `--help` | Hilfe zu den Befehlen anzeigen | — |
 
 Alternativ zu `uv run main.py` funktionieren im jeweiligen Plattformordner
-`uv run kulturbytes-facebook` und `uv run kulturbytes-mastodon`.
+`uv run kulturbytes-facebook`, `uv run kulturbytes-mastodon` und
+`uv run kulturbytes-instagram`.
 
 ## Einzelnen Termin direkt auswählen
 
@@ -115,7 +126,7 @@ oder ausgefilterte Termine führen zu einer Fehlermeldung und einem Fehler-Exitc
 
 ## Inhalt der Beiträge
 
-Beide Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API
+Alle Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API
 und verlinken auf den Termin bei Kulturbytes. Vorhandene Veranstaltungsbilder
 und Hashtags ergänzen die Beiträge.
 
@@ -123,7 +134,9 @@ Facebook verwendet einen ausführlichen Beitrag und veröffentlicht vorhandene
 Bilder als Fotopost. Mastodon verwendet einen auf höchstens 500 Zeichen
 gekürzten Text und öffentliche Beiträge mit Alt-Text für Bilder. Die Details
 stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
-[Mastodon](mastodon/README.md#inhalt-der-beiträge).
+[Mastodon](mastodon/README.md#inhalt-der-beiträge). Instagram benötigt ein JPEG-Hauptbild
+und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; siehe
+[Instagram](instagram/README.md#bild-und-beitragstext).
 
 ## Lokale Daten
 
@@ -132,10 +145,10 @@ SQLite-Datenbank. Die Termin-ID (`date_uuid`) dient dazu, bekannte Termine beim
 nächsten Lauf auszublenden. Eine Vorschau kann die Datenbank anlegen, speichert
 aber keine Veröffentlichung.
 
-Standardmäßig entstehen `facebook_posts.sqlite3` beziehungsweise
-`mastodon_posts.sqlite3` im aktuellen Arbeitsverzeichnis. Behalte bestehende
+Standardmäßig entstehen `facebook_posts.sqlite3`, `mastodon_posts.sqlite3` beziehungsweise
+`instagram_posts.sqlite3` im aktuellen Arbeitsverzeichnis. Behalte bestehende
 Datenbanken bei einem Umzug oder Update. Nutze das bisherige Arbeitsverzeichnis
-oder setze `DATABASE_PATH` auf einen absoluten Pfad. Verwende für die beiden
+oder setze `DATABASE_PATH` auf einen absoluten Pfad. Verwende für alle
 Plattformen getrennte Datenbanken.
 
 Virtuelle Umgebungen, Caches, `.env`-Dateien und lokale Datenbanken werden durch
@@ -148,7 +161,7 @@ gehört zum Repository und hält die Abhängigkeitsversionen fest.
 |---|---|
 | `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
 | Beim Start fehlt eine Umgebungsvariable | Setze die Zugangsdaten im selben Terminal, in dem du den Publisher startest. |
-| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte alle drei Paketordner. |
+| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte alle vier Paketordner. |
 | Es stehen keine Termine zur Auswahl | Prüfe Stadtfilter und bereits veröffentlichte Termine. |
 | Die Veröffentlichung schlägt fehl | Lies die API-Fehlermeldung und die Hinweise für deine Plattform. |
 
@@ -157,20 +170,23 @@ und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
 
 ## Entwicklung
 
-Die drei Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
+Die vier Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
 Das Paket `kulturbytes-common` wird lokal eingebunden. Änderungen an gemeinsamen
-Funktionen wirken auf beide Publisher.
+Funktionen wirken auf alle Publisher.
 
 ```text
 common/src/kulturbytes_common/
   events.py       API-Abfragen und Veranstaltungsinformationen
   media.py        Bildadressen und Bilddownloads
+  formatting.py   Gemeinsame Markdown-Bereinigung
   selection.py    Terminliste und interaktive Auswahl
   database.py     Prüfung auf bereits veröffentlichte Termine
   workflow.py     Laden, Filtern, Sortieren und Veröffentlichen
 facebook/src/kulturbytes_facebook/cli.py
 mastodon/src/kulturbytes_mastodon/cli.py
+instagram/src/kulturbytes_instagram/cli.py
 tests/test_publishers.py
+tests/test_instagram.py
 ```
 
 Die Plattformpakete enthalten ihre Konfiguration, Postformatierung, API-Aufrufe

@@ -1,0 +1,24 @@
+[project]
+name = "kulturbytes-instagram"
+version = "0.1.0"
+description = "Kulturbytes-Veranstaltungen als Instagram-Bildbeiträge veröffentlichen"
+readme = "README.md"
+authors = [
+    { name = "Aurelius Wendelken", email = "webtobesocial@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.5.0",
+    "httpx>=0.28.1",
+    "kulturbytes-common",
+]
+
+[project.scripts]
+kulturbytes-instagram = "kulturbytes_instagram:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+kulturbytes-common = { workspace = true }

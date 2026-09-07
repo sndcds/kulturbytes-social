@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 members = [
     "kulturbytes-common",
     "kulturbytes-facebook",
+    "kulturbytes-instagram",
     "kulturbytes-mastodon",
 ]
 
@@ -105,6 +106,23 @@ requires-dist = [
 name = "kulturbytes-facebook"
 version = "0.1.0"
 source = { editable = "facebook" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "kulturbytes-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.5.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "kulturbytes-common", editable = "common" },
+]
+
+[[package]]
+name = "kulturbytes-instagram"
+version = "0.1.0"
+source = { editable = "instagram" }
 dependencies = [
     { name = "click" },
     { name = "httpx" },

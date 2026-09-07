@@ -9,9 +9,10 @@ The primary goal is to publish Kulturbytes event data to external social platfor
 Current targets:
 
 - Facebook Pages
+- Instagram professional accounts (single-image feed posts)
 - Mastodon, especially `https://norden.social`
 
-Agents working in this repository should preserve the same event-selection, enrichment, deduplication, preview, and publishing behavior across both publishers wherever possible.
+Agents working in this repository should preserve the same event-selection, enrichment, deduplication, preview, and publishing behavior across all publishers wherever possible.
 
 This file distinguishes current implementation details from requirements for future changes. Known gaps below are not guarantees that the code already satisfies those requirements.
 
@@ -51,7 +52,7 @@ This file distinguishes current implementation details from requirements for fut
    - Keep `pyproject.toml` and `uv.lock` consistent.
 
 8. **Use `click` for CLI interaction.**
-   - Keep CLI behavior consistent between Facebook and Mastodon publishers.
+   - Keep CLI behavior consistent between the platform publishers.
 
 ---
 
@@ -75,7 +76,7 @@ Use this endpoint for:
 - finding `date_slug`,
 - sorting by date and time.
 
-Use this endpoint's `summary` as the preferred social body text for both publishers. Always fetch the selected event's details for the remaining content and metadata, and use their `description` when the list summary is missing or empty.
+Use this endpoint's `summary` as the preferred social body text for all publishers. Always fetch the selected event's details for the remaining content and metadata, and use their `description` when the list summary is missing or empty.
 
 ### Event detail enrichment
 
@@ -85,7 +86,7 @@ For each selected event fetch:
 GET https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}
 ```
 
-Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The shared workflow creates a copy with `summary` set from the selected list record (or an empty string), so both platform formatters use list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
+Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The shared workflow creates a copy with `summary` set from the selected list record (or an empty string), so all platform formatters use list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
 
 The discovery response wraps the list in `data.events`; the detail response wraps one event in `data`. The field lists below describe possible fields, not a guaranteed schema. A live sample checked on 2026-09-07 omitted `tags`, `content_language`, `event_types`, and `event_links` from the detail response, and exposed `price_type` at event level. Several optional date fields were also absent. Handle missing fields gracefully; do not infer that missing tags mean the discovery record had no tags. Current formatting reads tags only from the detail object and prices only from `date`.
 
@@ -172,7 +173,7 @@ By default, only offer events that:
 - are today or in the future,
 - have not already been published to the target platform.
 
-Both publishers currently support:
+All publishers currently support:
 
 - `--city Flensburg`: case-insensitive exact city match.
 - `--limit N`: limit the offered list; default `50`, `0` means all candidates.
@@ -228,7 +229,7 @@ Diesen Termin jetzt auf Mastodon veröffentlichen? [y/N]:
 
 ## Direct event selection
 
-Both CLIs accept `--event-uuid UUID --date-identifier IDENTIFIER` together.
+All CLIs accept `--event-uuid UUID --date-identifier IDENTIFIER` together.
 `IDENTIFIER` may be a `date_slug` or `date_uuid`. Resolve the pair against
 `/api/events` before applying the list limit, require exactly one match, and fetch
 its details using the resolved slug. Preserve the list-summary/detail-description
@@ -243,8 +244,8 @@ or filtered targets and direct publication failures return a nonzero exit code.
 
 Dry run should be the safe default for interactive commands.
 
-Run from `facebook/` or `mastodon/` (there is no root `main.py`).
-Both publishers require their access-token environment variables at import time, including for dry run and `--help`; Facebook also requires `FACEBOOK_PAGE_ID`. `.env` files are not loaded automatically.
+Run from `facebook/`, `mastodon/`, or `instagram/` (there is no root `main.py`).
+Facebook and Mastodon require their access-token environment variables at import time, including for dry run and `--help`; Facebook also requires `FACEBOOK_PAGE_ID`. `.env` files are not loaded automatically. Instagram requires credentials only for publishing; its dry run and help work without credentials.
 
 CLI style:
 
@@ -280,6 +281,7 @@ Default names:
 ```text
 facebook_posts.sqlite3
 mastodon_posts.sqlite3
+instagram_posts.sqlite3
 ```
 
 Use `date_uuid` as the primary key.
@@ -315,7 +317,7 @@ CREATE TABLE IF NOT EXISTS published_events (
 
 Only write the publication record after the remote platform confirms success.
 
-Known limitation: both writers use plain `INSERT`. Republishing with `--include-published` can succeed remotely and then fail locally with a duplicate primary key. It does not update the existing record. Do not describe this option as reliably recording repeat publications.
+Known limitation: the Facebook and Mastodon writers use plain `INSERT`. Republishing with `--include-published` can succeed remotely and then fail locally with a duplicate primary key. It does not update the existing record. Do not describe this option as reliably recording repeat publications.
 
 ---
 
@@ -391,7 +393,7 @@ Examples:
 
 Do not publish raw Markdown to platforms that do not render it as expected.
 
-Current implementation: `strip_markdown` exists only in the Mastodon CLI and handles a subset of Markdown. Facebook `build_message` currently passes Markdown through. Shared normalization for both platforms is a requirement for future formatting fixes, not existing behavior.
+Current implementation: `strip_markdown` lives in `kulturbytes_common.formatting` and is used by Mastodon and Instagram. It handles a subset of Markdown. Facebook `build_message` currently passes Markdown through; integrating it there remains a future fix.
 
 Typical transformations:
 
@@ -635,6 +637,42 @@ These are requirements for improved composition. The current final fallback uses
 
 ---
 
+# Instagram publisher
+
+Implementation: `instagram/src/kulturbytes_instagram/cli.py`, using the shared workflow.
+Keep interactive/direct selection, list-summary/detail-description priority, filtering,
+confirmation and dry-run behavior aligned with the other platforms.
+
+- Only single-image feed posts are supported. Use the detail `images.main.url`.
+- Instagram fetches the public JPEG URL itself. The publisher checks the JPEG signature
+  with a read-only image request, also in dry run. Missing/non-JPEG images fail the event;
+  there is no text fallback, image conversion, external hosting, or generated image.
+  Image dimensions and other platform restrictions are validated remotely by Meta.
+- `INSTAGRAM_LOGIN_TYPE=instagram` (default) uses `graph.instagram.com` with an Instagram
+  User Access Token and `instagram_business_basic` / `instagram_business_content_publish`.
+  `facebook` uses `graph.facebook.com` and requires a linked professional Instagram account
+  and the appropriate Facebook Login permissions, including `instagram_basic` and
+  `instagram_content_publish`. See `instagram/README.md` for setup.
+- `INSTAGRAM_USER_ID` is the numeric Instagram account ID for the selected login flow;
+  `INSTAGRAM_ACCESS_TOKEN` must match it. Neither is required for preview/help.
+  `INSTAGRAM_GRAPH_API_VERSION` defaults to `v26.0`, matching the project's Meta version default.
+- The caption has an application limit of 2,200 characters and up to five generated
+  hashtags, prioritizing Kulturbytes and city. Trim summary first, preserve the full
+  Kulturbytes URL and whole hashtags, and reject overlong fixed metadata.
+- After confirmation, create `POST /{user_id}/media` with `image_url` and `caption`;
+  poll `GET /{container_id}?fields=status_code,status` up to five times, 60 seconds apart.
+  Only `FINISHED` permits `POST /{user_id}/media_publish` with `creation_id`.
+  Error, expiration, unexpected status or timeout must not record success.
+- Store the confirmed media ID in `instagram_posts.sqlite3`, keyed by `date_uuid`.
+  Unlike the older publishers, an explicitly confirmed repeat uses an upsert and
+  replaces the saved media ID. Do not automatically retry publication after transport errors.
+- Tests in `tests/test_instagram.py` simulate the HTTP sequence, errors, polling, caption
+  limits, image checks, CLI confirmation, direct selection and SQLite deduplication.
+
+API reference: [Meta's Instagram publishing documentation](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api?entity=request-23987686-ab559ffb-8e2c-4b0a-b43a-5737b6d2f672).
+
+---
+
 ## Message composition
 
 Platform-neutral event information is already shared through `kulturbytes_common`; final formatting remains in each platform CLI.
@@ -650,6 +688,7 @@ build_hashtags
 format_price
 get_image_url
 download_image
+strip_markdown
 ```
 
 Existing platform-specific helpers include:
@@ -659,7 +698,6 @@ build_message  # Facebook
 build_mastodon_message
 publish_facebook_photo
 publish_text_post  # Facebook
-strip_markdown  # currently Mastodon only
 upload_mastodon_media
 publish_mastodon_status
 ```
@@ -696,7 +734,7 @@ All external API calls should use:
 response.raise_for_status()
 ```
 
-and report the response payload on failure after redacting secrets. This is a target requirement: current Kulturbytes/image requests do not print response bodies, media polling does not call `raise_for_status()`, and platform error helpers do not implement explicit secret redaction.
+and report the response payload on failure after redacting secrets. This is a target requirement: current Kulturbytes/image requests do not print response bodies, media polling does not call `raise_for_status()`, and Facebook and Mastodon error helpers do not implement explicit secret redaction. Instagram redacts its configured token in API error payloads and sends it only as an Authorization header.
 
 Good error output includes:
 
@@ -815,7 +853,7 @@ Do not include real secrets in `.env.example`. These snippets describe environme
 
 ## Dependency management
 
-Use Python 3.12 or newer. The repository is a `uv` workspace with three packages and one root `uv.lock`. Add or remove dependencies in the package that uses them with `uv`.
+Use Python 3.12 or newer. The repository is a `uv` workspace with four packages and one root `uv.lock`. Add or remove dependencies in the package that uses them with `uv`.
 
 Examples:
 
@@ -889,6 +927,7 @@ uv.lock                        # shared lockfile
 common/src/kulturbytes_common/
     events.py                  # API reads, dates, URLs, hashtags, prices
     media.py                   # image URLs and downloads
+    formatting.py              # Markdown normalization
     selection.py               # interactive selection
     database.py                # duplicate lookup
     workflow.py                # shared filtering and publishing loop
@@ -898,10 +937,14 @@ facebook/
 mastodon/
     main.py                    # compatibility entry point
     src/kulturbytes_mastodon/cli.py
+instagram/
+    main.py
+    src/kulturbytes_instagram/cli.py
 tests/test_publishers.py
+tests/test_instagram.py
 ```
 
-Each platform CLI owns its configuration, final formatting, publication calls, and database schema/writer. Console commands are `kulturbytes-facebook` and `kulturbytes-mastodon`; there is no `kulturbytes-social` command. Keep the platform `main.py` wrappers functional. Do not introduce another architectural refactor unless requested.
+Each platform CLI owns its configuration, final formatting, publication calls, and database schema/writer. Console commands are `kulturbytes-facebook`, `kulturbytes-mastodon`, and `kulturbytes-instagram`; there is no `kulturbytes-social` command. Keep the platform `main.py` wrappers functional. Do not introduce another architectural refactor unless requested.
 
 ---
 

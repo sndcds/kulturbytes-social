@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import re
 import sqlite3
 import time
 from datetime import date
@@ -13,6 +12,7 @@ import httpx
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
 )
+from kulturbytes_common.formatting import strip_markdown
 from kulturbytes_common.media import download_image, get_image_url
 from kulturbytes_common.workflow import run_publisher
 
@@ -400,55 +400,6 @@ def upload_mastodon_media(
         )
 
     return str(media_id)
-
-
-def strip_markdown(text: str) -> str:
-    if not text:
-        return ""
-
-    # Markdown-Links: [Text](URL) -> Text: URL
-    text = re.sub(
-        r"\[([^\]]+)\]\((https?://[^)]+)\)",
-        r"\1: \2",
-        text,
-    )
-
-    # Bold / italic
-    text = re.sub(
-        r"\*\*(.*?)\*\*",
-        r"\1",
-        text,
-        flags=re.DOTALL,
-    )
-
-    text = re.sub(
-        r"__(.*?)__",
-        r"\1",
-        text,
-        flags=re.DOTALL,
-    )
-
-    text = re.sub(
-        r"(?<!\*)\*([^*]+)\*(?!\*)",
-        r"\1",
-        text,
-    )
-
-    # Escaped Markdown-Zeichen
-    text = re.sub(
-        r"\\([\\`*_{}\[\]()#+\-.!])",
-        r"\1",
-        text,
-    )
-
-    # Mehr als zwei Leerzeilen reduzieren
-    text = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        text,
-    )
-
-    return text.strip()
 
 
 def publish_mastodon_status(

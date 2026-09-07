@@ -1,2 +1,7 @@
 [tool.uv.workspace]
-members = ["common", "facebook", "mastodon"]
+members = [
+    "common",
+    "facebook",
+    "mastodon",
+    "instagram",
+]

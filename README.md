@@ -1,68 +1,168 @@
 # Kulturbytes Publisher
 
-Facebook und Mastodon teilen sich ein Python-Paket. Änderungen an API-Abfragen,
-Terminauswahl, Hashtags oder Bilddownloads wirken dadurch auf beide Publisher.
+Teile Kulturbytes-Veranstaltungen auf Facebook und Mastodon. Du wählst die
+gewünschten Termine im Terminal aus, siehst eine Vorschau und bestätigst jeden
+Beitrag vor der Veröffentlichung. So behältst du die Kontrolle darüber, was
+auf deiner Seite oder deinem Konto erscheint.
 
-```text
-common/src/kulturbytes_common/
-  events.py       Kulturbytes-API, Datum, Adresse, Preise und Hashtags
-  media.py        Bild-URL und Bilddownload
-  selection.py    Terminliste und interaktive Auswahl
-  database.py     Prüfung auf bereits veröffentlichte Termine
-  workflow.py     Laden, Filtern, Sortieren und Veröffentlichen der Auswahl
-facebook/src/kulturbytes_facebook/cli.py
-mastodon/src/kulturbytes_mastodon/cli.py
-```
+Wähle die Anleitung für deine Plattform:
 
-Die Plattformpakete enthalten ihre Konfiguration, Postformatierung, API-Aufrufe
-und SQLite-Schemata. Vorhandene Datenbanken können weiterverwendet werden.
-Facebook und Mastodon verwenden jeweils eine eigene Datenbank.
+| Plattform | Wofür du sie verwendest |
+|---|---|
+| [Facebook](facebook/README.md) | Veranstaltungsbeiträge auf einer Facebook-Seite veröffentlichen |
+| [Mastodon](mastodon/README.md) | Veranstaltungsbeiträge auf einem Mastodon-Konto veröffentlichen |
 
-## Installation
+## Voraussetzungen
 
-Python 3.12 oder neuer und `uv` werden benötigt. Im Repository-Hauptordner:
+Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
+Für deine Plattform benötigst du außerdem die in der jeweiligen Anleitung
+beschriebenen Zugangsdaten. Behalte den gesamten Repository-Ordner, da beide
+Publisher das Paket in `common/` verwenden.
+
+## Schnellstart
+
+Öffne ein Terminal im Repository-Hauptordner und installiere die Abhängigkeiten:
 
 ```bash
 uv sync --all-packages
 ```
 
-Die drei Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
-Das Paket `kulturbytes-common` wird lokal eingebunden; es muss nicht separat
-veröffentlicht oder kopiert werden. Für Installation und Betrieb den gesamten
-Repository-Ordner behalten.
+Öffne danach die [Facebook-Anleitung](facebook/README.md#schnellstart) oder die
+[Mastodon-Anleitung](mastodon/README.md#schnellstart). Dort findest du die
+Befehle zum Setzen deiner Zugangsdaten und für deine erste Vorschau.
+Die Installation ist für beide Plattformen gemeinsam und muss nur einmal
+ausgeführt werden.
 
-## Starten
+Bei der ersten Auswahl gibst du beispielsweise `1` oder `1,3-5` ein.
+`all` wählt alle angezeigten Termine; eine leere Eingabe beendet die Auswahl.
+Der Standardmodus zeigt nur eine Vorschau.
 
-Die Zugangsdaten wie in [Facebook](facebook/README.md) beziehungsweise
-[Mastodon](mastodon/README.md) beschrieben setzen. Danach im jeweiligen Ordner:
+## Konfiguration
+
+Beide Publisher lesen ihre Einstellungen aus Umgebungsvariablen. Die
+plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
+
+- [Facebook konfigurieren](facebook/README.md#konfiguration)
+- [Mastodon konfigurieren](mastodon/README.md#konfiguration)
+
+Die erforderlichen Zugangsdaten müssen auch für den Vorschau-Modus und die
+Befehlshilfe gesetzt sein. `.env`-Dateien werden nicht automatisch geladen.
+Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
+
+## Termine auswählen und veröffentlichen
+
+Nach der Konfiguration startest du den gewünschten Publisher in seinem Ordner.
+Für Facebook, ausgehend vom Repository-Hauptordner:
 
 ```bash
 cd facebook
 uv run main.py --dry-run --limit 10
 ```
 
-Oder für Mastodon, ausgehend vom Repository-Hauptordner:
+Für Mastodon, ebenfalls ausgehend vom Repository-Hauptordner:
 
 ```bash
 cd mastodon
 uv run main.py --dry-run --limit 10
 ```
 
-Alternativ funktionieren dort `uv run kulturbytes-facebook` bzw.
-`uv run kulturbytes-mastodon`. Der Standard ist eine Vorschau. `--publish`
-aktiviert die Veröffentlichung mit einer Bestätigung pro Termin.
+Die Liste enthält freigegebene Termine ab dem heutigen Datum, chronologisch
+sortiert. Bereits gespeicherte Veröffentlichungen werden ausgeblendet.
+Wähle die gewünschten Nummern aus, um ihre Vorschau zu sehen.
 
-Weitere Optionen: `--city Flensburg`, `--limit 0` (alle Termine) und
-`--include-published`. Die Datenbankpfade sind relativ zum Arbeitsverzeichnis;
-beim Umstellen bestehender Aufrufe das bisherige Arbeitsverzeichnis beibehalten
-oder `DATABASE_PATH` auf den absoluten Pfad der bisherigen Datenbank setzen.
+Wenn du veröffentlichen möchtest, starte im jeweiligen Plattformordner:
 
-## Tests
+```bash
+uv run main.py --publish --limit 10
+```
 
-Im Repository-Hauptordner:
+Vor jedem Beitrag fragt das Programm nach einer Bestätigung. `--limit` begrenzt
+die angebotene Liste; du entscheidest, wie viele Termine du daraus veröffentlichst.
+Der Ablauf ist interaktiv und eignet sich derzeit nicht für unbeaufsichtigte
+Timer-Läufe.
+
+| Option | Wirkung | Standard |
+|---|---|---|
+| `--dry-run` | Vorschau der ausgewählten Beiträge anzeigen | aktiv |
+| `--publish` | Beiträge nach einzelner Bestätigung veröffentlichen | aus |
+| `--limit 10` | Höchstens zehn Termine zur Auswahl anbieten | `50` |
+| `--limit 0` | Alle passenden Termine zur Auswahl anbieten | — |
+| `--city Flensburg` | Nach Stadt filtern, unabhängig von Groß- und Kleinschreibung | alle Städte |
+| `--include-published` | Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten | aus |
+| `--help` | Hilfe zu den Befehlen anzeigen | — |
+
+Alternativ zu `uv run main.py` funktionieren im jeweiligen Plattformordner
+`uv run kulturbytes-facebook` und `uv run kulturbytes-mastodon`.
+
+## Inhalt der Beiträge
+
+Beide Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API
+und verlinken auf den Termin bei Kulturbytes. Vorhandene Veranstaltungsbilder
+und Hashtags ergänzen die Beiträge.
+
+Facebook verwendet einen ausführlichen Beitrag und veröffentlicht vorhandene
+Bilder als Fotopost. Mastodon verwendet einen auf höchstens 500 Zeichen
+gekürzten Text und öffentliche Beiträge mit Alt-Text für Bilder. Die Details
+stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
+[Mastodon](mastodon/README.md#inhalt-der-beiträge).
+
+## Lokale Daten
+
+Jede Plattform speichert erfolgreiche Veröffentlichungen in ihrer eigenen
+SQLite-Datenbank. Die Termin-ID (`date_uuid`) dient dazu, bekannte Termine beim
+nächsten Lauf auszublenden. Eine Vorschau kann die Datenbank anlegen, speichert
+aber keine Veröffentlichung.
+
+Standardmäßig entstehen `facebook_posts.sqlite3` beziehungsweise
+`mastodon_posts.sqlite3` im aktuellen Arbeitsverzeichnis. Behalte bestehende
+Datenbanken bei einem Umzug oder Update. Nutze das bisherige Arbeitsverzeichnis
+oder setze `DATABASE_PATH` auf einen absoluten Pfad. Verwende für die beiden
+Plattformen getrennte Datenbanken.
+
+Virtuelle Umgebungen, Caches, `.env`-Dateien und lokale Datenbanken werden durch
+[`.gitignore`](.gitignore) aus Git ausgeschlossen. Die gemeinsame `uv.lock`
+gehört zum Repository und hält die Abhängigkeitsversionen fest.
+
+## Hilfe bei Problemen
+
+| Problem | Was du prüfen kannst |
+|---|---|
+| `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
+| Beim Start fehlt eine Umgebungsvariable | Setze die Zugangsdaten im selben Terminal, in dem du den Publisher startest. |
+| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte alle drei Paketordner. |
+| Es stehen keine Termine zur Auswahl | Prüfe Stadtfilter und bereits veröffentlichte Termine. |
+| Die Veröffentlichung schlägt fehl | Lies die API-Fehlermeldung und die Hinweise für deine Plattform. |
+
+Weitere Hilfe findest du bei [Facebook](facebook/README.md#hilfe-bei-problemen)
+und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
+
+## Entwicklung
+
+Die drei Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
+Das Paket `kulturbytes-common` wird lokal eingebunden. Änderungen an gemeinsamen
+Funktionen wirken auf beide Publisher.
+
+```text
+common/src/kulturbytes_common/
+  events.py       API-Abfragen und Veranstaltungsinformationen
+  media.py        Bildadressen und Bilddownloads
+  selection.py    Terminliste und interaktive Auswahl
+  database.py     Prüfung auf bereits veröffentlichte Termine
+  workflow.py     Laden, Filtern, Sortieren und Veröffentlichen
+facebook/src/kulturbytes_facebook/cli.py
+mastodon/src/kulturbytes_mastodon/cli.py
+tests/test_publishers.py
+```
+
+Die Plattformpakete enthalten ihre Konfiguration, Postformatierung, API-Aufrufe
+und Datenbankschemata. Führe die gemeinsamen Tests im Repository-Hauptordner aus:
 
 ```bash
 uv run --all-packages python -m unittest discover -s tests -v
 ```
 
 Die Tests verwenden simulierte HTTP-Antworten und temporäre Datenbanken.
+
+## Lizenz
+
+[AGPL-3.0](LICENSE)

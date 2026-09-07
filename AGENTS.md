@@ -13,6 +13,8 @@ Current targets:
 
 Agents working in this repository should preserve the same event-selection, enrichment, deduplication, preview, and publishing behavior across both publishers wherever possible.
 
+This file distinguishes current implementation details from requirements for future changes. Known gaps below are not guarantees that the code already satisfies those requirements.
+
 ---
 
 ## Core principles
@@ -83,6 +85,8 @@ GET https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}
 ```
 
 Use the returned `data` object as the canonical source for the social post.
+
+The discovery response wraps the list in `data.events`; the detail response wraps one event in `data`. The field lists below describe possible fields, not a guaranteed schema. A live sample checked on 2026-09-07 omitted `tags`, `content_language`, `event_types`, and `event_links` from the detail response, and exposed `price_type` at event level. Several optional date fields were also absent. Handle missing fields gracefully; do not infer that missing tags mean the discovery record had no tags. Current formatting reads tags only from the detail object and prices only from `date`.
 
 Important fields include:
 
@@ -167,11 +171,13 @@ By default, only offer events that:
 - are today or in the future,
 - have not already been published to the target platform.
 
-Optional CLI filters may include:
+Both publishers currently support:
 
-- `--city Flensburg`
-- `--limit N`
-- `--include-published`
+- `--city Flensburg`: case-insensitive exact city match.
+- `--limit N`: limit the offered list; default `50`, `0` means all candidates.
+- `--include-published`: also offer known dates, with an additional confirmation even in dry run.
+
+Current filtering checks the discovery record and requires `date_uuid`. It uses host-local `date.today()`, not explicitly Berlin time. Missing dates are skipped, but malformed dates can abort discovery. Detail-level release status is not rechecked; a mismatched detail date UUID only produces a warning. These are known gaps when improving validation.
 
 Keep filtering logic consistent between platforms.
 
@@ -197,7 +203,11 @@ Supported selection syntax should include:
 3-6
 1,3-5,9
 all
+alle
+*
 ```
+
+An empty selection exits without publishing.
 
 In publish mode, ask for explicit confirmation before publishing each event.
 
@@ -219,7 +229,10 @@ Diesen Termin jetzt auf Mastodon veröffentlichen? [y/N]:
 
 Dry run should be the safe default for interactive commands.
 
-Preferred CLI style:
+Run from `facebook/` or `mastodon/` (there is no root `main.py`).
+Both publishers require their access-token environment variables at import time, including for dry run and `--help`; Facebook also requires `FACEBOOK_PAGE_ID`. `.env` files are not loaded automatically.
+
+CLI style:
 
 ```bash
 uv run main.py
@@ -246,9 +259,9 @@ A dry run should:
 
 ## SQLite deduplication
 
-Use a separate SQLite database per target platform unless the codebase intentionally introduces a shared publishing database.
+The publishers use separate SQLite databases with incompatible platform-specific schemas. Do not point both at the same file. `DATABASE_PATH` overrides the path; relative paths resolve against the current working directory. Dry run may create the database and table but does not record publications.
 
-Suggested names:
+Default names:
 
 ```text
 facebook_posts.sqlite3
@@ -288,6 +301,8 @@ CREATE TABLE IF NOT EXISTS published_events (
 
 Only write the publication record after the remote platform confirms success.
 
+Known limitation: both writers use plain `INSERT`. Republishing with `--include-published` can succeed remotely and then fail locally with a duplicate primary key. It does not update the existing record. Do not describe this option as reliably recording repeat publications.
+
 ---
 
 ## Social hashtags
@@ -298,7 +313,7 @@ Use the detailed event field:
 event.get("tags") or []
 ```
 
-Convert every tag into a hashtag.
+Normalize every non-empty tag into a hashtag, discarding values that contain no usable characters. For Mastodon, all tags may not fit; preserve `#Kulturbytes` and the city where possible and remove optional tags only as whole hashtags when implementing length handling.
 
 Always add:
 
@@ -362,7 +377,7 @@ Examples:
 
 Do not publish raw Markdown to platforms that do not render it as expected.
 
-Provide a normalization helper for social text.
+Current implementation: `strip_markdown` exists only in the Mastodon CLI and handles a subset of Markdown. Facebook `build_message` currently passes Markdown through. Shared normalization for both platforms is a requirement for future formatting fixes, not existing behavior.
 
 Typical transformations:
 
@@ -434,7 +449,7 @@ Typical endpoint:
 POST /{PAGE_ID}/feed
 ```
 
-Use only when no usable event image is available.
+The current code uses this endpoint only when `get_image_url` returns no URL. A failed image download or photo upload fails that event; there is no automatic text fallback.
 
 ### Facebook permissions
 
@@ -446,7 +461,7 @@ pages_read_engagement
 pages_manage_posts
 ```
 
-If Meta returns an authorization or permission error, print the complete API error payload without exposing the access token.
+If Meta returns an authorization or permission error, report the API error payload after redacting secrets. Never print a raw payload or exception URL if it contains an access token.
 
 ### Facebook Event creation
 
@@ -458,7 +473,7 @@ POST /{PAGE_ID}/events
 
 is available.
 
-Previous testing showed that this operation can return:
+An earlier version of this document reported the following error, but the repository has no reproducible test establishing its cause:
 
 ```text
 Unsupported post request
@@ -466,7 +481,9 @@ Unsupported post request
 
 with Graph API error code `100` and subcode `33`.
 
-Do not reintroduce Page Event creation without verifying current Meta Graph API support.
+This error alone does not establish which operation or permission is unsupported. Do not reintroduce Page Event creation without verifying current Meta Graph API support for the configured app and version.
+
+`v26.0` is the current code default, not a claim about Meta’s latest supported version. The official [Page posts documentation](https://developers.facebook.com/docs/pages-api/posts/) could not be retrieved during the 2026-09-07 review (HTTP 429); current Meta support and permission requirements remain unverified.
 
 ---
 
@@ -513,6 +530,8 @@ Use a Bearer token:
 Authorization: Bearer <token>
 ```
 
+The user token needs `write:statuses` for posting and `write:media` for uploads (or encompassing scopes). See the official [status](https://docs.joinmastodon.org/methods/statuses/) and [media](https://docs.joinmastodon.org/methods/media/) API documentation.
+
 Default visibility:
 
 ```text
@@ -533,6 +552,8 @@ POST /api/v2/media
 3. Include alt text.
 4. Wait until media processing is ready when necessary.
 5. Attach the returned media ID to the status.
+
+The API can return `200` for processed media or `202` while processing. Poll `GET /api/v1/media/{id}` until ready. Current `wait_for_media` checks up to ten times at one-second intervals, then only warns and continues; it does not raise on HTTP errors. Reliable failure/timeout handling remains to be implemented. See the [media API documentation](https://docs.joinmastodon.org/methods/media/).
 
 Use the detailed image metadata:
 
@@ -560,21 +581,9 @@ Alt text should be useful and human-readable.
 
 Do not assume unlimited status text.
 
-`norden.social` currently rejects posts above its configured character limit.
+Current preview and publishing code use a hard-coded `max_length=500` and Python `len()`. They do not query the instance configuration.
 
-A previously observed response was:
-
-```text
-422 Unprocessable Content
-Gültigkeitsprüfung ist fehlgeschlagen:
-Text Begrenzung von 500 Zeichen überschritten
-```
-
-Therefore Mastodon publishing must enforce the instance's character limit before posting.
-
-At minimum support a 500-character fallback limit.
-
-Prefer querying instance configuration when practical instead of permanently assuming 500 characters.
+A read-only check of `https://norden.social/api/v2/instance` on 2026-09-07 returned `configuration.statuses.max_characters = 500` and `characters_reserved_per_url = 23`. These values can change. For future limit handling, query `GET /api/v2/instance`, retain a 500-character fallback, and account for the instance's URL counting rules rather than assuming Python `len()` matches server validation. See the official [instance API](https://docs.joinmastodon.org/methods/instance/) and [configuration fields](https://docs.joinmastodon.org/entities/Instance/).
 
 ### Mastodon content strategy
 
@@ -608,13 +617,15 @@ Never truncate the Kulturbytes URL.
 
 Never truncate hashtags in the middle of a hashtag.
 
+These are requirements for improved composition. The current final fallback uses `message[:max_length]`, which can cut off the Kulturbytes URL or hashtags when the fixed content is too long. It does not yet guarantee their preservation.
+
 ---
 
 ## Message composition
 
-Platform-neutral event information can be shared through helper functions, but final formatting should remain platform-specific.
+Platform-neutral event information is already shared through `kulturbytes_common`; final formatting remains in each platform CLI.
 
-Useful shared helpers include:
+Existing shared helpers include:
 
 ```text
 get_event_url
@@ -625,16 +636,16 @@ build_hashtags
 format_price
 get_image_url
 download_image
-strip_markdown
 ```
 
-Platform-specific helpers should include:
+Existing platform-specific helpers include:
 
 ```text
-build_facebook_message
+build_message  # Facebook
 build_mastodon_message
 publish_facebook_photo
-publish_facebook_text
+publish_text_post  # Facebook
+strip_markdown  # currently Mastodon only
 upload_mastodon_media
 publish_mastodon_status
 ```
@@ -671,7 +682,7 @@ All external API calls should use:
 response.raise_for_status()
 ```
 
-but print the platform's response payload first when a request fails.
+and report the response payload on failure after redacting secrets. This is a target requirement: current Kulturbytes/image requests do not print response bodies, media polling does not call `raise_for_status()`, and platform error helpers do not implement explicit secret redaction.
 
 Good error output includes:
 
@@ -738,7 +749,7 @@ Do not commit:
 .env.*
 ```
 
-unless an intentionally empty example file is used.
+unless it is a deliberately tracked example file containing only non-secret defaults and empty credentials.
 
 Do not commit:
 
@@ -784,25 +795,25 @@ MASTODON_ACCESS_TOKEN=
 DATABASE_PATH=mastodon_posts.sqlite3
 ```
 
-Do not include real secrets in `.env.example`.
+Do not include real secrets in `.env.example`. These snippets describe environment variables; creating an `.env` file alone does not configure the current programs.
 
 ---
 
 ## Dependency management
 
-Add dependencies with `uv`.
+Use Python 3.12 or newer. The repository is a `uv` workspace with three packages and one root `uv.lock`. Add or remove dependencies in the package that uses them with `uv`.
 
 Examples:
 
 ```bash
-uv add httpx
-uv add click
+uv add --package kulturbytes-common httpx
+uv add --package kulturbytes-common click
 ```
 
 Run:
 
 ```bash
-uv sync
+uv sync --all-packages
 ```
 
 Execute scripts with:
@@ -811,7 +822,7 @@ Execute scripts with:
 uv run main.py
 ```
 
-or the appropriate platform-specific entry point.
+from the platform directory, or use `uv run --package kulturbytes-facebook kulturbytes-facebook` / `uv run --package kulturbytes-mastodon kulturbytes-mastodon` from the repository root.
 
 Do not document `python -m venv` as the primary setup method for this repository.
 
@@ -839,60 +850,50 @@ Before changing behavior, inspect the existing implementation rather than rewrit
 
 ## Testing expectations
 
-At minimum, changes should be manually tested in dry-run mode.
+For publishing behavior changes, manually inspect dry-run output. Documentation-only edits require checking statements and commands against the code; they do not require live publishing.
 
-Recommended future automated tests:
+Existing tests are in `tests/test_publishers.py`. Run from the repository root:
 
-- hashtag normalization,
-- duplicate hashtag removal,
-- event URL generation,
-- date formatting,
-- price formatting,
-- Markdown stripping,
-- Mastodon length trimming,
-- event selection parsing,
-- SQLite deduplication,
-- missing image fallback,
-- mocked Facebook API publishing,
-- mocked Mastodon media publishing,
-- mocked Mastodon status publishing.
+```bash
+uv sync --all-packages
+uv run --all-packages python -m unittest discover -s tests -v
+```
 
-Do not use live social publishing in automated tests.
+They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, and filtering/sorting/limits. Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
+
+Additional coverage is still needed for Markdown normalization, Mastodon link/hashtag preservation and instance limits, malformed dates, platform HTTP errors, media processing, and repeat-publication database behavior. Do not use live social publishing in automated tests.
 
 ---
 
-## Recommended project structure
+## Current project structure
 
-A future shared implementation may use:
-
-```text
-src/
-└── kulturbytes_social/
-    ├── __init__.py
-    ├── api.py
-    ├── cli.py
-    ├── database.py
-    ├── formatting.py
-    ├── facebook.py
-    └── mastodon.py
-```
-
-Possible command layout:
+The shared implementation already exists as a `uv` workspace:
 
 ```text
-kulturbytes-social facebook
-kulturbytes-social mastodon
+pyproject.toml                 # workspace members
+uv.lock                        # shared lockfile
+common/src/kulturbytes_common/
+    events.py                  # API reads, dates, URLs, hashtags, prices
+    media.py                   # image URLs and downloads
+    selection.py               # interactive selection
+    database.py                # duplicate lookup
+    workflow.py                # shared filtering and publishing loop
+facebook/
+    main.py                    # compatibility entry point
+    src/kulturbytes_facebook/cli.py
+mastodon/
+    main.py                    # compatibility entry point
+    src/kulturbytes_mastodon/cli.py
+tests/test_publishers.py
 ```
 
-Do not perform this refactor automatically unless requested.
-
-Existing standalone scripts are valid and should remain functional until a shared architecture is deliberately introduced.
+Each platform CLI owns its configuration, final formatting, publication calls, and database schema/writer. Console commands are `kulturbytes-facebook` and `kulturbytes-mastodon`; there is no `kulturbytes-social` command. Keep the platform `main.py` wrappers functional. Do not introduce another architectural refactor unless requested.
 
 ---
 
 ## Definition of done
 
-A publishing change is done when:
+For publishing changes, verify the applicable requirements below and identify remaining known gaps explicitly. This checklist describes the target behavior, not a claim that every item already passes:
 
 - the event list still loads,
 - detailed event data is fetched correctly,
@@ -908,4 +909,4 @@ A publishing change is done when:
 - remote API failures do not mark events as published,
 - secrets are not logged,
 - SQLite deduplication remains correct,
-- `uv sync` succeeds.
+- `uv sync --all-packages` and the existing test suite succeed.

@@ -98,8 +98,8 @@ def build_message(
     )
 
     description = (
-        event.get("description")
-        or event.get("summary")
+        event.get("summary")
+        or event.get("description")
     )
 
     start = get_start_datetime(

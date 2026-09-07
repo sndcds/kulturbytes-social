@@ -95,6 +95,28 @@ class PublisherTests(unittest.TestCase):
                 with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
                     self.assertFalse(already_published(conn, 'date-1'))
 
+    def test_social_text_uses_list_summary_or_detail_description(self):
+        detail = dict(EVENT, summary='Detail summary must not be used.',
+                      description='Description from the detail response.')
+        for module in [FACEBOOK, MASTODON]:
+            for summary in ['Summary from the event list.', None, '', '   ']:
+                with self.subTest(platform=module.__name__, summary=summary), tempfile.TemporaryDirectory() as directory:
+                    listed = dict(SUMMARY)
+                    if summary is not None:
+                        listed['summary'] = summary
+                    with patch.dict(EVENT, detail):
+                        result, requests = self.run_cli(
+                            module, directory, ['--dry-run'], '1\n', [listed],
+                        )
+                    expected = summary if summary and summary.strip() else detail['description']
+                    self.assertIn(expected, result.output)
+                    self.assertNotIn(detail['summary'], result.output)
+                    if summary and summary.strip():
+                        self.assertNotIn(detail['description'], result.output)
+                    self.assertEqual(len(requests), 2)
+                    with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
+                        self.assertFalse(already_published(conn, 'date-1'))
+
     def test_publish_requires_confirmation(self):
         for module in [FACEBOOK, MASTODON]:
             with self.subTest(platform=module.__name__), tempfile.TemporaryDirectory() as directory:

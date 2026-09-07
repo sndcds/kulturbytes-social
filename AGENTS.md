@@ -23,11 +23,12 @@ This file distinguishes current implementation details from requirements for fut
    - Do not manually duplicate event data that is already available from the API.
    - Always derive social content from the Kulturbytes API.
 
-2. **Use the event list only for discovery.**
+2. **Use the event list for discovery and the social summary.**
    - Event overview:
      `https://api.kulturbytes.de/api/events`
    - Detailed event data:
      `https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}`
+   - Prefer the selected list record's non-empty `summary` for social text; otherwise use `description` from the detail response. Whitespace-only summaries count as empty. Do not fall back to the detail response's `summary`.
 
 3. **Use `uuid` and `date_slug` for public links.**
    - Frontend URL format:
@@ -74,7 +75,7 @@ Use this endpoint for:
 - finding `date_slug`,
 - sorting by date and time.
 
-Do not use this endpoint as the final source for social publishing content when detailed event data is available.
+Use this endpoint's `summary` as the preferred social body text for both publishers. Always fetch the selected event's details for the remaining content and metadata, and use their `description` when the list summary is missing or empty.
 
 ### Event detail enrichment
 
@@ -84,7 +85,7 @@ For each selected event fetch:
 GET https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}
 ```
 
-Use the returned `data` object as the canonical source for the social post.
+Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The shared workflow creates a copy with `summary` set from the selected list record (or an empty string), so both platform formatters use list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
 
 The discovery response wraps the list in `data.events`; the detail response wraps one event in `data`. The field lists below describe possible fields, not a guaranteed schema. A live sample checked on 2026-09-07 omitted `tags`, `content_language`, `event_types`, and `event_links` from the detail response, and exposed `price_type` at event level. Several optional date fields were also absent. Handle missing fields gracefully; do not infer that missing tags mean the discovery record had no tags. Current formatting reads tags only from the detail object and prices only from `date`.
 

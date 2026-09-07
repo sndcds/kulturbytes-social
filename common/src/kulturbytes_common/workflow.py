@@ -192,6 +192,12 @@ def run_publisher(
                         client,
                         summary_event,
                     )
+                    # Use the list summary for social text, while keeping all
+                    # other metadata from the detailed event response.
+                    event = {
+                        **event,
+                        "summary": (summary_event.get("summary") or "").strip(),
+                    }
 
                     detailed_date_uuid = (
                         event.get(

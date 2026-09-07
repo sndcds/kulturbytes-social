@@ -226,6 +226,19 @@ Diesen Termin jetzt auf Mastodon veröffentlichen? [y/N]:
 
 ---
 
+## Direct event selection
+
+Both CLIs accept `--event-uuid UUID --date-identifier IDENTIFIER` together.
+`IDENTIFIER` may be a `date_slug` or `date_uuid`. Resolve the pair against
+`/api/events` before applying the list limit, require exactly one match, and fetch
+its details using the resolved slug. Preserve the list-summary/detail-description
+text strategy. Skip numbered selection, but keep dry-run default, publication
+confirmation, and release/date/city/deduplication filters. Unmatched, ambiguous,
+or filtered targets and direct publication failures return a nonzero exit code.
+`--include-published` retains its additional confirmation and known SQLite limitation.
+
+---
+
 ## Dry-run behavior
 
 Dry run should be the safe default for interactive commands.

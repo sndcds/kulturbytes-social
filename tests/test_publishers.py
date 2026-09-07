@@ -67,7 +67,7 @@ class SharedFunctionsTests(unittest.TestCase):
 
 
 class PublisherTests(unittest.TestCase):
-    def run_cli(self, module, directory, args, user_input, summaries=None):
+    def run_cli(self, module, directory, args, user_input, summaries=None, expected_exit=0):
         requests = []
 
         def respond(request):
@@ -82,7 +82,7 @@ class PublisherTests(unittest.TestCase):
             'kulturbytes_common.workflow.httpx.Client', return_value=client
         ):
             result = CliRunner().invoke(module.main, args, input=user_input)
-        self.assertEqual(result.exit_code, 0, result.output + str(result.exception))
+        self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         return result, requests
 
     def test_dry_run_for_both_platforms(self):
@@ -156,6 +156,61 @@ class PublisherTests(unittest.TestCase):
                 self.assertIn('1 Termine stehen zur Auswahl.', result.output)
                 for title in ['Später', 'Vergangen', 'Entwurf', 'Andere Stadt']:
                     self.assertNotIn(title, result.output)
+
+    def test_direct_selection_by_slug_and_date_uuid(self):
+        for module in [FACEBOOK, MASTODON]:
+            for identifier in ['209901011830', 'date-1']:
+                with self.subTest(platform=module.__name__, identifier=identifier), tempfile.TemporaryDirectory() as directory:
+                    args = ['--event-uuid', 'event-1', '--date-identifier', identifier]
+                    summaries = [dict(SUMMARY, uuid='other-event'), SUMMARY]
+                    result, requests = self.run_cli(module, directory, args, '', summaries)
+                    self.assertIn('DRY RUN', result.output)
+                    self.assertNotIn('Welche Events', result.output)
+                    self.assertEqual(len(requests), 2)
+                    with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
+                        self.assertFalse(already_published(conn, 'date-1'))
+                    result, _ = self.run_cli(module, directory, args + ['--publish'], 'n\n')
+                    self.assertIn('Übersprungen.', result.output)
+                    function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
+                    value = 'post-direct' if module is FACEBOOK else ('post-direct', None)
+                    with patch.object(module, function, return_value=value) as publish:
+                        self.run_cli(module, directory, args + ['--publish'], 'y\n')
+                        publish.assert_called_once()
+                    with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
+                        self.assertTrue(already_published(conn, 'date-1'))
+                    result, requests = self.run_cli(module, directory, args, '', expected_exit=1)
+                    self.assertIn('bereits', result.output)
+                    self.assertEqual(len(requests), 1)
+
+    def test_direct_publication_failure_does_not_record_success(self):
+        for module in [FACEBOOK, MASTODON]:
+            with self.subTest(platform=module.__name__), tempfile.TemporaryDirectory() as directory:
+                function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
+                with patch.object(module, function, side_effect=RuntimeError('Remote failure')):
+                    result, _ = self.run_cli(
+                        module, directory,
+                        ['--publish', '--event-uuid', 'event-1', '--date-identifier', 'date-1'],
+                        'y\n', expected_exit=1,
+                    )
+                self.assertIn('Remote failure', result.output)
+                with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
+                    self.assertFalse(already_published(conn, 'date-1'))
+
+    def test_direct_selection_rejects_invalid_or_filtered_targets(self):
+        args = ['--event-uuid', 'event-1', '--date-identifier', 'date-1']
+        for module in [FACEBOOK, MASTODON]:
+            for summaries in [[], [dict(SUMMARY, uuid='other')],
+                              [dict(SUMMARY, date_uuid='other')], [SUMMARY, SUMMARY],
+                              [dict(SUMMARY, release_status='draft')],
+                              [dict(SUMMARY, start_date='2000-01-01')]]:
+                with self.subTest(platform=module.__name__, summaries=summaries), tempfile.TemporaryDirectory() as directory:
+                    _, requests = self.run_cli(module, directory, args, '', summaries, expected_exit=1)
+                    self.assertEqual(len(requests), 1)
+            for incomplete in [['--event-uuid', 'event-1'], ['--date-identifier', 'date-1']]:
+                with self.subTest(platform=module.__name__, args=incomplete), tempfile.TemporaryDirectory() as directory:
+                    result, requests = self.run_cli(module, directory, incomplete, '', expected_exit=2)
+                    self.assertIn('gemeinsam', result.output)
+                    self.assertEqual(requests, [])
 
     def test_confirmed_publish_records_platform_id(self):
         for module in [FACEBOOK, MASTODON]:

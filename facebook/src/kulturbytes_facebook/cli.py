@@ -516,11 +516,25 @@ def publish_event(
         "z.B. --city Flensburg."
     ),
 )
+@click.option(
+    "--event-uuid",
+    type=str,
+    default=None,
+    help="Event-UUID für die direkte Auswahl eines einzelnen Termins.",
+)
+@click.option(
+    "--date-identifier",
+    type=str,
+    default=None,
+    help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
+)
 def main(
     dry_run: bool,
     limit: int,
     include_published: bool,
     city: str | None,
+    event_uuid: str | None,
+    date_identifier: str | None,
 ) -> None:
     run_publisher(
         conn=init_database(),
@@ -530,6 +544,8 @@ def main(
         limit=limit,
         include_published=include_published,
         city=city,
+        event_uuid=event_uuid,
+        date_identifier=date_identifier,
     )
 
 

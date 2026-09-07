@@ -18,6 +18,8 @@ def run_publisher(
     limit: int,
     include_published: bool,
     city: str | None,
+    event_uuid: str | None = None,
+    date_identifier: str | None = None,
 ) -> None:
     timeout = httpx.Timeout(
         connect=10.0,
@@ -34,6 +36,10 @@ def run_publisher(
     }
 
     try:
+        if (event_uuid is None) != (date_identifier is None):
+            raise click.UsageError(
+                "--event-uuid und --date-identifier müssen gemeinsam angegeben werden."
+            )
         with httpx.Client(
             timeout=timeout,
             follow_redirects=True,
@@ -47,6 +53,20 @@ def run_publisher(
                 f"{len(events)} "
                 "Kulturbytes-Termine gefunden"
             )
+
+            if event_uuid is not None:
+                events = [
+                    event for event in events
+                    if event.get("uuid") == event_uuid
+                    and date_identifier in (
+                        event.get("date_slug"), event.get("date_uuid"),
+                    )
+                ]
+                if len(events) != 1:
+                    raise click.ClickException(
+                        "Die Kombination aus Event-UUID und Terminkennung wurde "
+                        "in /api/events nicht eindeutig gefunden."
+                    )
 
             events = sorted(
                 events,
@@ -115,9 +135,16 @@ def run_publisher(
                 "Termine stehen zur Auswahl."
             )
 
-            selected_events = select_events(
-                candidates
-            )
+            if event_uuid is not None:
+                if not candidates:
+                    raise click.ClickException(
+                        "Der gewählte Termin ist nicht freigegeben, liegt in der "
+                        "Vergangenheit, passt nicht zum Stadtfilter oder wurde bereits "
+                        "veröffentlicht (siehe --include-published)."
+                    )
+                selected_events = candidates
+            else:
+                selected_events = select_events(candidates)
 
             if not selected_events:
                 click.echo(
@@ -232,6 +259,8 @@ def run_publisher(
                     )
 
                 except httpx.HTTPStatusError as exc:
+                    if event_uuid is not None:
+                        raise click.ClickException(str(exc)) from exc
                     click.secho(
                         (
                             "\nHTTP/API-Fehler bei: "
@@ -247,6 +276,8 @@ def run_publisher(
                     )
 
                 except Exception as exc:
+                    if event_uuid is not None:
+                        raise click.ClickException(str(exc)) from exc
                     click.secho(
                         (
                             "\nFehler bei: "

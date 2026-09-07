@@ -94,6 +94,25 @@ Timer-Läufe.
 Alternativ zu `uv run main.py` funktionieren im jeweiligen Plattformordner
 `uv run kulturbytes-facebook` und `uv run kulturbytes-mastodon`.
 
+## Einzelnen Termin direkt auswählen
+
+Im jeweiligen Plattformordner kannst du die nummerierte Auswahl überspringen:
+
+```bash
+uv run main.py --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
+```
+
+Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. `--date-identifier` akzeptiert
+entweder den `date_slug` (wie im Beispiel) oder die `date_uuid`. Beide Optionen
+müssen zusammen angegeben werden. Ohne `--publish` erscheint nur die Vorschau.
+Vor dem Veröffentlichen bleibt die Bestätigungsfrage bestehen.
+
+Der Termin wird über `/api/events` aufgelöst; die Liste liefert auch die bevorzugte
+`summary`. Die Detailantwort liefert die übrigen Daten und bei leerer Zusammenfassung
+die `description`. Freigabe-, Datums-, Stadt- und Duplikatfilter gelten weiterhin.
+`--limit` schließt den direkt gewählten Termin nicht aus. Nicht eindeutig gefundene
+oder ausgefilterte Termine führen zu einer Fehlermeldung und einem Fehler-Exitcode.
+
 ## Inhalt der Beiträge
 
 Beide Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API

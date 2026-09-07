@@ -2,6 +2,13 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "kulturbytes-common",
+    "kulturbytes-facebook",
+    "kulturbytes-mastodon",
+]
+
 [[package]]
 name = "anyio"
 version = "4.15.1"
@@ -22,6 +29,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+]
+
+[[package]]
+name = "click"
+version = "8.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/0e/7fa0ef50764b67090eca4114772a2abf8b6148198475e54c660b97caeee6/click-8.5.0.tar.gz", hash = "sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34", size = 382235, upload-time = "2026-08-26T13:33:14.56Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl", hash = "sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360", size = 125251, upload-time = "2026-08-26T13:33:12.928Z" },
 ]
 
 [[package]]
@@ -71,15 +87,53 @@ wheels = [
 ]
 
 [[package]]
-name = "kulturbytes-facebook"
+name = "kulturbytes-common"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "common" }
 dependencies = [
+    { name = "click" },
     { name = "httpx" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "httpx", specifier = ">=0.28.1" }]
+requires-dist = [
+    { name = "click", specifier = ">=8.5.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+]
+
+[[package]]
+name = "kulturbytes-facebook"
+version = "0.1.0"
+source = { editable = "facebook" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "kulturbytes-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.5.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "kulturbytes-common", editable = "common" },
+]
+
+[[package]]
+name = "kulturbytes-mastodon"
+version = "0.1.0"
+source = { editable = "mastodon" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "kulturbytes-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.5.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "kulturbytes-common", editable = "common" },
+]
 
 [[package]]
 name = "typing-extensions"

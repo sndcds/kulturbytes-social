@@ -142,6 +142,95 @@ class PublisherTests(unittest.TestCase):
                 self.assertIn('DRY RUN', result.output)
                 self.assertEqual(len(requests), 2)
 
+    def seed_previous_publication(self, module, directory):
+        previous_event = deepcopy(EVENT)
+        previous_event.update(uuid='old-event', title='Alter Titel')
+        previous_event['date'].update(start_date='2098-12-31', start_time='17:00')
+        with patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'):
+            conn = module.init_database()
+            try:
+                if module is FACEBOOK:
+                    module.remember_post(conn, previous_event, 'old-post')
+                else:
+                    module.remember_post(conn, previous_event, 'old-post', 'https://example.test/old-post')
+                # Avoid sleeps and same-second timestamp comparisons.
+                conn.execute("UPDATE published_events SET published_at = '2000-01-01 00:00:00'")
+                conn.commit()
+            finally:
+                conn.close()
+        return self.publication_records(directory)
+
+    def publication_records(self, directory):
+        with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(row) for row in conn.execute('SELECT * FROM published_events')]
+
+    def test_confirmed_repeat_publish_updates_existing_record(self):
+        for module in [FACEBOOK, MASTODON]:
+            for status_url in ['https://example.test/new-post', None]:
+                with self.subTest(platform=module.__name__, status_url=status_url), tempfile.TemporaryDirectory() as directory:
+                    previous = self.seed_previous_publication(module, directory)
+                    function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
+                    value = 'new-post' if module is FACEBOOK else ('new-post', status_url)
+
+                    def remote_success(*args):
+                        self.assertEqual(self.publication_records(directory), previous)
+                        return value
+
+                    with patch.object(module, function, side_effect=remote_success) as publish:
+                        result, _ = self.run_cli(
+                            module, directory, ['--include-published', '--publish'], '1\ny\ny\n',
+                        )
+                        publish.assert_called_once()
+                    self.assertIn('wurde bereits veröffentlicht', result.output)
+                    self.assertIn('Gespeichert: date-1 -> new-post', result.output)
+                    self.assertNotIn('UNIQUE', result.output)
+                    self.assertNotIn('Fehler', result.output)
+                    records = self.publication_records(directory)
+                    self.assertEqual(len(records), 1)
+                    record = records[0]
+                    self.assertEqual(record['date_uuid'], 'date-1')
+                    self.assertEqual(record['event_uuid'], EVENT['uuid'])
+                    self.assertEqual(record['title'], EVENT['title'])
+                    self.assertEqual(record['start_date'], EVENT['date']['start_date'])
+                    self.assertEqual(record['start_time'], EVENT['date']['start_time'])
+                    self.assertGreater(record['published_at'], previous[0]['published_at'])
+                    id_column = 'facebook_post_id' if module is FACEBOOK else 'mastodon_status_id'
+                    self.assertEqual(record[id_column], 'new-post')
+                    if module is MASTODON:
+                        self.assertEqual(record['mastodon_status_url'], status_url)
+
+    def test_failed_repeat_publish_preserves_existing_record(self):
+        for module in [FACEBOOK, MASTODON]:
+            with self.subTest(platform=module.__name__), tempfile.TemporaryDirectory() as directory:
+                previous = self.seed_previous_publication(module, directory)
+                function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
+                with patch.object(module, function, side_effect=RuntimeError('Remote failure')) as publish:
+                    result, _ = self.run_cli(
+                        module, directory, ['--include-published', '--publish'], '1\ny\ny\n',
+                    )
+                    publish.assert_called_once()
+                self.assertIn('Remote failure', result.output)
+                self.assertNotIn('Gespeichert:', result.output)
+                self.assertEqual(self.publication_records(directory), previous)
+
+    def test_repeat_publish_requires_both_confirmations_and_respects_dry_run(self):
+        cases = [(['--publish'], '1\nn\n'), (['--publish'], '1\ny\nn\n'), ([], '1\ny\n')]
+        for module in [FACEBOOK, MASTODON]:
+            for args, user_input in cases:
+                with self.subTest(platform=module.__name__, args=args, user_input=user_input), tempfile.TemporaryDirectory() as directory:
+                    previous = self.seed_previous_publication(module, directory)
+                    function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
+                    with patch.object(module, function) as publish:
+                        result, _ = self.run_cli(
+                            module, directory, ['--include-published'] + args, user_input,
+                        )
+                        publish.assert_not_called()
+                    self.assertIn('wurde bereits veröffentlicht', result.output)
+                    if not args:
+                        self.assertIn('DRY RUN', result.output)
+                    self.assertEqual(self.publication_records(directory), previous)
+
     def test_filtering_sorting_and_limit(self):
         summaries = [
             dict(SUMMARY, start_date='2099-02-01', title='Später'),

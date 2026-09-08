@@ -70,6 +70,13 @@ def remember_post(
             start_time
         )
         VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date_uuid) DO UPDATE SET
+            event_uuid = excluded.event_uuid,
+            facebook_post_id = excluded.facebook_post_id,
+            title = excluded.title,
+            start_date = excluded.start_date,
+            start_time = excluded.start_time,
+            published_at = CURRENT_TIMESTAMP
         """,
         (
             event_date["uuid"],

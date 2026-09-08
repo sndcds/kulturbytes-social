@@ -22,6 +22,7 @@ from kulturbytes_common.events import (
 )
 from kulturbytes_common.formatting import strip_markdown
 from kulturbytes_common.media import get_image_url
+from kulturbytes_common.media_security import media_response
 from kulturbytes_common.workflow import run_publisher
 
 CAPTION_LIMIT = 2200
@@ -193,14 +194,7 @@ def validate_image(client: httpx.Client, event: dict) -> str:
     image_url = get_image_url(event)
     if not image_url:
         raise ValueError("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
-    parsed = urlsplit(image_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError("Instagram benötigt eine öffentliche HTTP(S)-Bildadresse ohne Zugangsdaten.")
-    # Inspect the actual bytes, not the extension of Kulturbytes' image endpoint.
-    with client.stream("GET", image_url, headers={"Accept": "*/*"}) as response:
-        if response.is_error:
-            click.echo(f"Instagram Bilddownload (HTTP {response.status_code})", err=True)
-        response.raise_for_status()
+    with media_response(client, image_url) as response:
         prefix = b""
         for chunk in response.iter_bytes():
             prefix += chunk
@@ -208,7 +202,7 @@ def validate_image(client: httpx.Client, event: dict) -> str:
                 break
         if not prefix.startswith(b"\xff\xd8\xff"):
             raise ValueError("Instagram benötigt ein öffentlich abrufbares JPEG. Das Hauptbild ist kein JPEG.")
-    return image_url
+    return str(response.url)
 
 
 def wait_for_container(client: httpx.Client, config: InstagramConfig, container_id: str) -> None:

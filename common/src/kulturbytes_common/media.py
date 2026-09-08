@@ -1,4 +1,5 @@
 import httpx
+from .media_security import media_response
 
 
 def get_image_url(
@@ -37,11 +38,8 @@ def download_image(
             "Event besitzt kein Hauptbild"
         )
 
-    response = client.get(
-        image_url
-    )
-
-    response.raise_for_status()
+    with media_response(client, image_url) as response:
+        response.read()
 
     content_type = (
         response.headers.get(

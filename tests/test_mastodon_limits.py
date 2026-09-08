@@ -10,6 +10,7 @@ from urllib.parse import parse_qs
 import click
 import httpx
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from kulturbytes_common.events import build_hashtags, get_event_url
 from test_publishers import EVENT, SUMMARY, MASTODON as mastodon, ENV
@@ -111,7 +112,7 @@ class MastodonLimitTests(unittest.TestCase):
         with patch.dict(os.environ, ENV, clear=True), patch.object(
             mastodon, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3',
         ), patch('kulturbytes_common.workflow.httpx.Client', return_value=client):
-            result = CliRunner().invoke(mastodon.main, args, input=user_input)
+            result = CliRunner().invoke(cli, ['mastodon'] + args, input=user_input)
         return result, requests
 
     def test_once_per_run_and_preview_matches_actual_status(self):

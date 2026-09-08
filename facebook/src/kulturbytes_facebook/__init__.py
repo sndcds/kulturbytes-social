@@ -1,3 +1,3 @@
-from .cli import main
+from .cli import facebook_command
 
-__all__ = ["main"]
+__all__ = ["facebook_command"]

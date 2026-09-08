@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import httpx
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from test_publishers import EVENT, SUMMARY, FACEBOOK, MASTODON, ENV as PUBLISHER_ENV
 from test_instagram import ENV, instagram
@@ -37,7 +38,7 @@ class DateIdentityTests(unittest.TestCase):
         with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, {**PUBLISHER_ENV, **ENV}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client,
         ), patch.object(module, 'publish_event', return_value=True) as publish:
-            result = CliRunner().invoke(module.main, args, input=user_input)
+            result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)
         return result, requests, publish
 
     def test_invalid_detail_identity_blocks_all_publishers(self):

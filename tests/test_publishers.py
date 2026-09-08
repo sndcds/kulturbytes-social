@@ -10,6 +10,7 @@ from unittest.mock import patch
 import click
 import httpx
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
 from kulturbytes_common.events import build_address, build_hashtags, format_price
@@ -81,7 +82,7 @@ class PublisherTests(unittest.TestCase):
         with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client
         ):
-            result = CliRunner().invoke(module.main, args, input=user_input)
+            result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         return result, requests
 

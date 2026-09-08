@@ -6,7 +6,6 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import click
@@ -14,6 +13,7 @@ import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact
 from kulturbytes_common.credentials import INSTAGRAM, credential_options, resolve_credential
+from kulturbytes_common.database import get_database_path
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -25,7 +25,7 @@ CAPTION_LIMIT = 2200
 HASHTAG_LIMIT = 5  # Conservative application cap, including Kulturbytes and city.
 POLL_ATTEMPTS = 5
 POLL_INTERVAL = 60
-DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "instagram_posts.sqlite3"))
+DATABASE_PATH = get_database_path("instagram")
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,7 @@ def load_config() -> InstagramConfig:
 
 
 def init_database() -> sqlite3.Connection:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS published_events (
@@ -252,7 +253,7 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
     return True
 
 
-@click.command()
+@click.command("instagram", help="Kulturbytes-Termine für Instagram auswählen, prüfen und veröffentlichen.")
 @credential_options("Instagram")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option("--dry-run/--publish", default=True, help="Vorschau (Standard) oder nach Bestätigung veröffentlichen.")
@@ -261,7 +262,7 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
 @click.option("--city", default=None, help="Nach Stadt filtern, z.B. Flensburg.")
 @click.option("--event-uuid", default=None, help="Event-UUID für die direkte Terminauswahl.")
 @click.option("--date-identifier", default=None, help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.")
-def main(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
+def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
          event_uuid: str | None, date_identifier: str | None) -> None:
     if check_auth_only:
         check_auth(load_config())
@@ -274,7 +275,3 @@ def main(check_auth_only: bool, dry_run: bool, limit: int, include_published: bo
         limit=limit, include_published=include_published, city=city,
         event_uuid=event_uuid, date_identifier=date_identifier,
     )
-
-
-if __name__ == "__main__":
-    main()

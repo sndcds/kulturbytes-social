@@ -1,3 +1,3 @@
-from .cli import main
+from .cli import mastodon_command
 
-__all__ = ["main"]
+__all__ = ["mastodon_command"]

@@ -8,6 +8,7 @@ members = [
     "kulturbytes-facebook",
     "kulturbytes-instagram",
     "kulturbytes-mastodon",
+    "kulturbytes-social",
 ]
 
 [[package]]
@@ -311,6 +312,25 @@ requires-dist = [
     { name = "click", specifier = ">=8.5.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "kulturbytes-common", editable = "common" },
+]
+
+[[package]]
+name = "kulturbytes-social"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "click" },
+    { name = "kulturbytes-facebook" },
+    { name = "kulturbytes-instagram" },
+    { name = "kulturbytes-mastodon" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.5.0" },
+    { name = "kulturbytes-facebook", editable = "facebook" },
+    { name = "kulturbytes-instagram", editable = "instagram" },
+    { name = "kulturbytes-mastodon", editable = "mastodon" },
 ]
 
 [[package]]

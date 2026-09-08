@@ -1,7 +1,27 @@
-[tool.uv.workspace]
-members = [
-    "common",
-    "facebook",
-    "mastodon",
-    "instagram",
+[project]
+name = "kulturbytes-social"
+version = "0.1.0"
+description = "Kulturbytes-Veranstaltungen auf sozialen Plattformen veröffentlichen"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.5.0",
+    "kulturbytes-facebook",
+    "kulturbytes-instagram",
+    "kulturbytes-mastodon",
 ]
+
+[project.scripts]
+kulturbytes-social = "kulturbytes_social.cli:cli"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.workspace]
+members = ["common", "facebook", "mastodon", "instagram"]
+
+[tool.uv.sources]
+kulturbytes-facebook = { workspace = true }
+kulturbytes-mastodon = { workspace = true }
+kulturbytes-instagram = { workspace = true }

@@ -9,6 +9,7 @@ from urllib.parse import parse_qs
 
 import httpx
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
 from kulturbytes_common.events import get_event_url
@@ -84,7 +85,7 @@ class InstagramTests(unittest.TestCase):
         with patch.dict(os.environ, ENV if env is None else env, clear=True), patch.object(
             instagram, 'DATABASE_PATH', self.database,
         ), patch('kulturbytes_common.workflow.httpx.Client', return_value=client):
-            result = CliRunner().invoke(instagram.main, args, input=user_input)
+            result = CliRunner().invoke(cli, ['instagram'] + args, input=user_input)
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         return result
 

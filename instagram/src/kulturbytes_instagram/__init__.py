@@ -1,3 +1,3 @@
-from .cli import main
+from .cli import instagram_command
 
-__all__ = ["main"]
+__all__ = ["instagram_command"]

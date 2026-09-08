@@ -246,19 +246,19 @@ or filtered targets and direct publication failures return a nonzero exit code.
 
 Dry run should be the safe default for interactive commands.
 
-Run from `facebook/`, `mastodon/`, or `instagram/` (there is no root `main.py`).
+There is exactly one primary public CLI: `kulturbytes-social`. Run `uv run kulturbytes-social PLATFORM ...` from the repository root, or the installed command from any directory. Platform packages expose reusable named Click command objects; they have no public scripts or main.py wrappers. New publishers must be subcommands (for example `kulturbytes-social bluesky`), never separate executables.
 All three publishers load social credentials lazily through `load_config()` and frozen configuration dataclasses whose token fields use `repr=False`. Imports, dry run, and `--help` work without credentials. `--publish` validates required credentials before event discovery or database initialization. `.env` files are not loaded automatically.
 
 CLI style:
 
 ```bash
-uv run main.py
+uv run kulturbytes-social facebook
 ```
 
 for dry run, and:
 
 ```bash
-uv run main.py --publish
+uv run kulturbytes-social facebook --publish
 ```
 
 for actual publishing.
@@ -276,7 +276,7 @@ A dry run should:
 
 ## Authentication preflight
 
-All platform CLIs support `uv run main.py --check-auth` from their platform directory.
+All platform subcommands support `--check-auth`, e.g. `uv run kulturbytes-social facebook --check-auth`.
 It takes precedence over `--publish`, `--dry-run`, and event-selection options;
 no event discovery, prompts, image reads/uploads, media containers, remote content
 creation, or database access may occur. Missing/invalid configuration or failed
@@ -309,7 +309,7 @@ Stable mappings:
 - `kulturbytes-social/instagram`: `access-token` (`INSTAGRAM_ACCESS_TOKEN`).
 - `kulturbytes-social/mastodon`: `access-token` (`MASTODON_ACCESS_TOKEN`).
 
-The existing command architecture is retained with `--credentials status|set|delete`
+Platform subcommands retain `--credentials status|set|delete`
 and `--credential page|user` for Facebook (`access` for the others). Status shows only
 presence according to resolution precedence. Set prompts with `hide_input=True`;
 delete requires confirmation and affects only keyring storage. Reject combinations
@@ -333,7 +333,7 @@ from repeat publishing, date validation, auth preflight and Mastodon instance li
 
 ## SQLite deduplication
 
-The publishers use separate SQLite databases with incompatible platform-specific schemas. Do not point both at the same file. `DATABASE_PATH` overrides the path; relative paths resolve against the current working directory. Dry run may create the database and table but does not record publications.
+The publishers use separate SQLite databases with incompatible platform-specific schemas. Do not point both at the same file. `DATABASE_PATH` overrides the path; relative values resolve against the platform default database directory, not CWD. In a source checkout, defaults remain anchored at `REPO/PLATFORM/PLATFORM_posts.sqlite3` to reuse existing state. Outside a checkout, defaults are `$XDG_DATA_HOME/kulturbytes-social/PLATFORM_posts.sqlite3` or `~/.local/share/kulturbytes-social/PLATFORM_posts.sqlite3`. Absolute overrides are used directly. Existing non-default databases must be selected explicitly when migrating; never silently copy or merge them. Parent directories are created only during database initialization. Dry run may create the database and table but does not record publications.
 
 Default names:
 
@@ -928,7 +928,7 @@ Do not include real secrets in `.env.example`. These snippets describe environme
 
 ## Dependency management
 
-Use Python 3.12 or newer. The repository is a `uv` workspace with four packages and one root `uv.lock`. Add or remove dependencies in the package that uses them with `uv`.
+Use Python 3.12 or newer. The repository is a `uv` workspace with a root application package and four internal packages and one root `uv.lock`. Add or remove dependencies in the package that uses them with `uv`.
 
 Examples:
 
@@ -946,10 +946,10 @@ uv sync --all-packages
 Execute scripts with:
 
 ```bash
-uv run main.py
+uv run kulturbytes-social facebook
 ```
 
-from the platform directory, or use `uv run --package kulturbytes-facebook kulturbytes-facebook` / `uv run --package kulturbytes-mastodon kulturbytes-mastodon` from the repository root.
+from the repository root; replace `facebook` with `mastodon` or `instagram` as needed. Only the root package declares `[project.scripts]`. It depends on the platform workspace packages, which depend on common; common must never import the root CLI.
 
 Do not document `python -m venv` as the primary setup method for this repository.
 
@@ -997,7 +997,8 @@ Additional coverage is still needed for Markdown normalization, malformed dates,
 The shared implementation already exists as a `uv` workspace:
 
 ```text
-pyproject.toml                 # workspace members
+pyproject.toml                 # root application, public script, workspace members
+src/kulturbytes_social/cli.py   # root Click group and command registration
 uv.lock                        # shared lockfile
 common/src/kulturbytes_common/
     events.py                  # API reads, dates, URLs, hashtags, prices
@@ -1007,19 +1008,16 @@ common/src/kulturbytes_common/
     database.py                # duplicate lookup
     workflow.py                # shared filtering and publishing loop
 facebook/
-    main.py                    # compatibility entry point
     src/kulturbytes_facebook/cli.py
 mastodon/
-    main.py                    # compatibility entry point
     src/kulturbytes_mastodon/cli.py
 instagram/
-    main.py
     src/kulturbytes_instagram/cli.py
 tests/test_publishers.py
 tests/test_instagram.py
 ```
 
-Each platform CLI owns its configuration, final formatting, publication calls, and database schema/writer. Console commands are `kulturbytes-facebook`, `kulturbytes-mastodon`, and `kulturbytes-instagram`; there is no `kulturbytes-social` command. Keep the platform `main.py` wrappers functional. Do not introduce another architectural refactor unless requested.
+Each platform owns its configuration, final formatting, publication calls, and database schema/writer. The root CLI directly registers `facebook_command`, `mastodon_command`, and `instagram_command`. Credential management remains platform-scoped through the existing options, e.g. `kulturbytes-social facebook --credentials set --credential page`; do not duplicate credential logic in the root. Tests invoke the root CLI for all platform scenarios. Preserve the dependency direction root → platform → common.
 
 ---
 

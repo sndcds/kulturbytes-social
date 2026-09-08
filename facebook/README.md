@@ -17,19 +17,18 @@ Paket in `common/`.
 ## Schnellstart
 
 Öffne ein Terminal im Repository-Hauptordner. Installiere die Abhängigkeiten,
-wechsle zum Publisher und starte die Vorschau ohne Zugangsdaten:
+starte die Vorschau ohne Zugangsdaten:
 
 ```bash
 uv sync --all-packages
-cd facebook
-uv run main.py --dry-run --limit 10
+uv run kulturbytes-social facebook --dry-run --limit 10
 ```
 
 Das Programm zeigt bis zu zehn Termine. Gib beispielsweise `1` oder `1,3-5`
 ein und drücke Enter, um die Vorschau zu sehen. `all` wählt alle angezeigten
 Termine; eine leere Eingabe beendet die Auswahl. Es wird nichts veröffentlicht.
 
-Alle weiteren Startbefehle auf dieser Seite führst du im Ordner `facebook/` aus.
+Alle weiteren Startbefehle auf dieser Seite führst du im Repository-Hauptordner aus.
 
 ## Konfiguration
 
@@ -65,12 +64,12 @@ OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
 den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
 `--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
 
-Im Ordner `facebook/`:
+Im Repository-Hauptordner:
 
 ```bash
-uv run main.py --credentials status
-uv run main.py --credentials set --credential page
-uv run main.py --credentials delete --credential page
+uv run kulturbytes-social facebook --credentials status
+uv run kulturbytes-social facebook --credentials set --credential page
+uv run kulturbytes-social facebook --credentials delete --credential page
 ```
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
@@ -98,10 +97,10 @@ OS-Backends: [Projektübersicht](../README.md#tokens-optional-im-os-keyring-spei
 
 ## Zugang ohne Veröffentlichung prüfen
 
-Im Ordner `facebook/`, nach dem Setzen der Zugangsdaten:
+Im Repository-Hauptordner, nach dem Setzen der Zugangsdaten:
 
 ```bash
-uv run main.py --check-auth
+uv run kulturbytes-social facebook --check-auth
 ```
 
 Beispiel einer erfolgreichen Prüfung (Exitcode 0):
@@ -130,7 +129,7 @@ Fehlende Zugangsdaten beenden `--publish` vor der Event-Abfrage.
 Starte mit einer kleinen Auswahl:
 
 ```bash
-uv run main.py --publish --limit 10 --city Flensburg
+uv run kulturbytes-social facebook --publish --limit 10 --city Flensburg
 ```
 
 Das Programm bietet freigegebene Termine ab dem heutigen Datum chronologisch
@@ -153,16 +152,15 @@ interaktiv und eignet sich derzeit nicht für unbeaufsichtigte Timer-Läufe.
 | `--include-published` | Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten | aus |
 | `--help` | Hilfe zu den Befehlen anzeigen | — |
 
-Alternativ zu `uv run main.py` kannst du `uv run kulturbytes-facebook` mit
-denselben Optionen verwenden. `DRY_RUN` und `MAX_POSTS_PER_RUN` werden nicht
+Der einzige öffentliche CLI-Befehl ist `kulturbytes-social` mit dem Unterbefehl `facebook`. `DRY_RUN` und `MAX_POSTS_PER_RUN` werden nicht
 als Umgebungsvariablen ausgewertet.
 
 ## Einzelnen Termin direkt auswählen
 
-Im jeweiligen Plattformordner kannst du die nummerierte Auswahl überspringen:
+Im Repository-Hauptordner kannst du die nummerierte Auswahl überspringen:
 
 ```bash
-uv run main.py --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
+uv run kulturbytes-social facebook --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
 ```
 
 Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. `--date-identifier` akzeptiert
@@ -188,15 +186,17 @@ werden vom Programm nicht angelegt.
 
 ## Lokale Daten
 
-Der Publisher legt standardmäßig `facebook_posts.sqlite3` im aktuellen
-Arbeitsverzeichnis an, auch beim ersten Vorschau-Lauf. Erst nach einer
+Der Publisher verwendet im Checkout fest `facebook/facebook_posts.sqlite3`,
+unabhängig vom Arbeitsverzeichnis. Bei einer Installation außerhalb eines Checkouts
+liegt die Datei unter `$XDG_DATA_HOME/kulturbytes-social/` (Fallback:
+`~/.local/share/kulturbytes-social/`). Ein Vorschau-Lauf darf die Datei anlegen. Erst nach einer
 erfolgreichen Veröffentlichung speichert er die Termin-ID (`date_uuid`),
 Veranstaltungsdaten und die Facebook-Post-ID.
 So erkennt er beim nächsten Lauf bereits veröffentlichte Termine.
 
 Behalte diese Datenbank bei einem Umzug oder Update. Mit `DATABASE_PATH` kannst
-du einen anderen Pfad festlegen; ein absoluter Pfad bleibt auch bei einem
-Wechsel des Arbeitsverzeichnisses eindeutig. Facebook und Mastodon benötigen
+du einen anderen Pfad festlegen. Relative Werte beziehen sich auf das Verzeichnis
+der Standarddatenbank, absolute Werte werden unverändert verwendet. Facebook und Mastodon benötigen
 jeweils eine eigene Datenbank.
 
 `--include-published` erlaubt nach zusätzlichen Bestätigungen auch eine erneute
@@ -217,7 +217,7 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 | Ein Fotobeitrag schlägt fehl | Prüfe die Bildadresse aus der Vorschau und die API-Fehlermeldung. Bei einem fehlerhaften Bild erfolgt kein automatischer Wechsel zum Textbeitrag. |
 | Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `DATABASE_PATH` existiert und beschreibbar ist. |
 
-Die verfügbaren Optionen zeigt `uv run main.py --help` auch ohne Zugangsdaten.
+Die verfügbaren Optionen zeigt `uv run kulturbytes-social facebook --help` auch ohne Zugangsdaten.
 
 ## Entwicklung
 
@@ -225,6 +225,9 @@ Der Plattformcode liegt in [`src/kulturbytes_facebook/cli.py`](src/kulturbytes_f
 Gemeinsame API-Abfragen, Terminauswahl und Bilddownloads liegen in
 [`common/`](../common/). Hinweise zur Struktur und zum Testlauf findest du in
 der [Projektübersicht](../README.md#entwicklung).
+
+Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
+[Migration und Datenbankpfade](../README.md#migration).
 
 ## Lizenz
 

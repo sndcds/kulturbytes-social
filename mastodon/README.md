@@ -57,6 +57,40 @@ wird vom Programm nicht automatisch geladen. Bewahre echte Tokens außerhalb
 der versionierten Dateien auf; `.env` und lokale Datenbanken sind bereits in
 [`.gitignore`](../.gitignore) ausgeschlossen.
 
+## Optionaler OS-Keyring
+
+Tokens werden zuerst aus der jeweiligen Umgebungsvariable, sonst aus dem
+OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
+den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
+`--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
+
+Im Ordner `mastodon/`:
+
+```bash
+uv run main.py --credentials status
+uv run main.py --credentials set
+uv run main.py --credentials delete
+```
+
+Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
+vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgegeben.
+Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht die Umgebung.
+Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
+mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
+Die Paketbefehle akzeptieren dieselben Optionen.
+
+Service: `kulturbytes-social/mastodon`, Benutzername: `access-token`.
+Instanz-/Kontokonfiguration wird weiterhin über Umgebungsvariablen gesetzt.
+
+Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
+und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
+`keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
+`secret-tool` auf und verwendet keine Klartext-Dateiablage. Backend-Fehler werden
+als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
+kaputtem Keyring. Server können extern bereitgestellte Systemd-Credentials bevorzugen;
+eine automatische Provisionierung ist nicht enthalten. Details und unterstützte
+OS-Backends: [Projektübersicht](../README.md#tokens-optional-im-os-keyring-speichern).
+
 ## Zugang ohne Veröffentlichung prüfen
 
 Im Ordner `mastodon/`, nach dem Setzen der Zugangsdaten:

@@ -11,6 +11,7 @@ import click
 import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
+from kulturbytes_common.credentials import FACEBOOK_PAGE, credential_options, resolve_credential
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -27,7 +28,7 @@ class FacebookConfig:
 
 def load_config() -> FacebookConfig:
     page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip()
-    token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "").strip()
+    token = resolve_credential(FACEBOOK_PAGE)
     version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v26.0").strip()
     if not page_id:
         raise click.ClickException("FACEBOOK_PAGE_ID fehlt.")
@@ -481,6 +482,7 @@ def publish_event(
 
 
 @click.command()
+@credential_options("Facebook")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",

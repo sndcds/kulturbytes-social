@@ -25,6 +25,11 @@ PLATFORMS = [FACEBOOK, MASTODON, instagram]
 
 
 class AuthTests(unittest.TestCase):
+    def setUp(self):
+        self.secret_lookup = patch('kulturbytes_common.credentials.get_secret', return_value=None)
+        self.lookup = self.secret_lookup.start()
+        self.addCleanup(self.secret_lookup.stop)
+
     def run_auth(self, module, response, *, env=None, args=None, expected_exit=0):
         requests = []
 
@@ -128,6 +133,7 @@ class AuthTests(unittest.TestCase):
                 result = CliRunner().invoke(module.main, ['--help'])
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertIn('--check-auth', result.output)
+                self.lookup.assert_not_called()
 
     def test_missing_credentials_fail_before_network_or_database(self):
         for module in PLATFORMS:
@@ -237,6 +243,7 @@ class AuthTests(unittest.TestCase):
                     result = CliRunner().invoke(module.main, ['--dry-run'], input='1\n')
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertIn('DRY RUN', result.output)
+                self.lookup.assert_not_called()
                 self.assertEqual(len(requests), 3 if module is instagram else 2)
                 with sqlite3.connect(database) as conn:
                     self.assertEqual(conn.execute('SELECT COUNT(*) FROM published_events').fetchone(), (0,))

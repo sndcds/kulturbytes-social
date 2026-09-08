@@ -289,7 +289,47 @@ For example, success displays `✓ Facebook Token gültig`; an expired Meta toke
 - Instagram: GET the configured version/user ID with `fields=id,username`, using the existing login-mode host; require matching ID and non-empty username.
 - Validate numeric Meta IDs, Graph version format, Instagram login type, and an HTTP(S) Mastodon origin without embedded credentials, path, query, or fragment.
 - Use Bearer headers, no redirects or retries, and shared redaction from `kulturbytes_common.auth`. Never display tokens, including API-echoed values and encoded forms. Transport failures must not print raw exception text.
-- This read-only check validates account access, not all publishing permissions. Do not add token refresh, OAuth flows, or token persistence.
+- This read-only check validates account access, not all publishing permissions. Do not add token refresh or OAuth flows; token persistence is restricted to the explicit OS-keyring management below.
+
+## Optional OS-keyring credentials
+
+`kulturbytes_common.credentials` owns keyring lookup, storage, deletion, and the shared
+Click management options. Python `keyring` is a dependency of `kulturbytes-common`,
+added through `uv add --package kulturbytes-common keyring`; keep the root lockfile synced.
+Never call `secret-tool` from application code or implement custom encryption.
+
+Resolution is environment > OS keyring > missing. Even an explicitly empty environment
+variable suppresses keyring access; whitespace-only values count as missing. Generic
+lookup never prompts. Help/imports/dry runs must not touch the keyring. Config loaders
+and auth checks use the same resolver. No Facebook Page Token recovery is currently
+implemented; support storage and resolution of User Tokens without inventing recovery.
+
+Stable mappings:
+- `kulturbytes-social/facebook`: `page-access-token` (`FACEBOOK_PAGE_ACCESS_TOKEN`), `user-access-token` (`FACEBOOK_USER_ACCESS_TOKEN`).
+- `kulturbytes-social/instagram`: `access-token` (`INSTAGRAM_ACCESS_TOKEN`).
+- `kulturbytes-social/mastodon`: `access-token` (`MASTODON_ACCESS_TOKEN`).
+
+The existing command architecture is retained with `--credentials status|set|delete`
+and `--credential page|user` for Facebook (`access` for the others). Status shows only
+presence according to resolution precedence. Set prompts with `hide_input=True`;
+delete requires confirmation and affects only keyring storage. Reject combinations
+with `--publish` or `--check-auth`; ignore event-selection flags during management.
+No event/network/database operation may run during credential management.
+
+Only OS backends (Secret Service, KWallet, macOS Keychain, Windows Credential Locker,
+or chains consisting solely of those) are accepted; reject file/plaintext/null/fail
+backends. Backend exceptions are converted to concise Click errors without raw details.
+Never display token values, fragments, lengths, or hashes. Do not persist tokens in
+SQLite, .env, config/log/temp files or shell startup files. Non-secret IDs, API versions,
+login types and instance URLs remain environment configuration. Service names are per
+platform, so changing accounts requires the matching token.
+
+Ubuntu optional packages: `sudo apt install gnome-keyring libsecret-tools`. Use an
+unlocked Secret Service session. Keyring is optional for headless/CI/systemd/container
+execution with env tokens; deployment-managed systemd credentials may be preferable,
+with explicit external handoff to the environment (no provisioning automation here).
+All tests must mock keyring API/backend access completely and preserve guarantees
+from repeat publishing, date validation, auth preflight and Mastodon instance limits.
 
 ## SQLite deduplication
 

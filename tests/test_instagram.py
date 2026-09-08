@@ -35,6 +35,9 @@ DIRECT = ['--event-uuid', 'event-1', '--date-identifier', 'date-1']
 
 class InstagramTests(unittest.TestCase):
     def setUp(self):
+        lookup = patch('kulturbytes_common.credentials.get_secret', return_value=None)
+        lookup.start()
+        self.addCleanup(lookup.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.database = Path(self.directory.name) / 'instagram.sqlite3'

@@ -158,7 +158,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                     begin_remote_mutation()
                     return ('123', 'https://example.test/123') if module is MASTODON else '123'
                 with patch.object(module, helper, side_effect=remote) as call, patch('click.confirm', return_value=False), \
-                     patch.object(INSTAGRAM, 'validate_image', return_value='https://example.test/image.jpg'):
+                     patch.object(INSTAGRAM, 'validate_image', return_value='https://api.kulturbytes.de/image.jpg'):
                     module.publish_event(Mock(), conn, EVENT, dry_run=True)
                     module.publish_event(Mock(), conn, EVENT, dry_run=False)
                     call.assert_not_called()
@@ -196,7 +196,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                         return httpx.Response(200, json={'status_code': 'FINISHED'})
                     event = deepcopy(EVENT)
                     if module is INSTAGRAM:
-                        event['images'] = {'main': {'url': 'https://example.test/image.jpg'}}
+                        event['images'] = {'main': {'url': 'https://api.kulturbytes.de/image.jpg'}}
                     with httpx.Client(transport=httpx.MockTransport(respond)) as client, patch('click.confirm', return_value=True):
                         if result_kind == 'success':
                             module.publish_event(client, conn, event, False, config=config)

@@ -113,7 +113,7 @@ class MastodonEnvironmentTests(IsolatedEnvironmentTestCase):
         event, summary = deepcopy(EVENT), deepcopy(SUMMARY)
         event['date']['venue_city'] = summary['venue_city'] = 'Husum'
         if image:
-            event['images'] = {'main': {'url': 'https://image.test/picture.jpg', 'alt': 'Kulturabend im Saal'}}
+            event['images'] = {'main': {'url': 'https://api.kulturbytes.de/picture.jpg', 'alt': 'Kulturabend im Saal'}}
         calls = []
         def respond(request):
             calls.append(request)
@@ -124,7 +124,7 @@ class MastodonEnvironmentTests(IsolatedEnvironmentTestCase):
                 return httpx.Response(200, json={'data': {'events': [summary]}})
             if request.url.path.startswith('/api/event/'):
                 return httpx.Response(200, json={'data': event})
-            if request.url.host == 'image.test':
+            if request.url.path == '/picture.jpg':
                 self.assertNotIn('Authorization', request.headers)
                 return httpx.Response(200, content=b'image', headers={'Content-Type': 'image/jpeg'})
             self.assertEqual(request.url.host, 'mastodon.example.test')

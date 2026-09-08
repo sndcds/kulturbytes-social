@@ -59,7 +59,7 @@ class SharedFunctionsTests(IsolatedEnvironmentTestCase):
 
     def test_image_download(self):
         event = deepcopy(EVENT)
-        event['images'] = {'main': {'url': 'https://example.test/image', 'uuid': 'image-1'}}
+        event['images'] = {'main': {'url': 'https://api.kulturbytes.de/image', 'uuid': 'image-1'}}
         with httpx.Client(transport=httpx.MockTransport(
             lambda request: httpx.Response(200, content=b'image', headers={'Content-Type': 'image/png; charset=binary'})
         )) as client:

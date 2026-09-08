@@ -179,7 +179,9 @@ All publishers currently support:
 - `--limit N`: limit the offered list; default `50`, `0` means all candidates.
 - `--include-published`: also offer known dates, with an additional confirmation even in dry run.
 
-Current filtering checks the discovery record and requires `date_uuid`. It uses host-local `date.today()`, not explicitly Berlin time. Missing dates are skipped, but malformed dates can abort discovery. Detail-level release status is not rechecked; a mismatched detail date UUID only produces a warning. These are known gaps when improving validation.
+Current filtering checks the discovery record and requires `date_uuid`. It uses host-local `date.today()`, not explicitly Berlin time. Missing dates are skipped, but malformed dates can abort discovery. Detail-level release status is not rechecked. These are known gaps when improving validation.
+
+The summary `date_uuid` and detailed `date.uuid` must match. A mismatched or missing detailed date identity is a hard error before `publish_event`, including in dry run: no remote publication or local publication-record update is allowed, and the summary identifier must not be substituted. Errors include the event UUID, date slug, and both date identifiers. Direct selection exits nonzero; interactive selection reports the error for that event and continues with remaining selected events.
 
 Keep filtering logic consistent between platforms.
 

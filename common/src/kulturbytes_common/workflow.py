@@ -226,29 +226,23 @@ def run_publisher(
                         "summary": (summary_event.get("summary") or "").strip(),
                     }
 
+                    detailed_date = event.get("date")
                     detailed_date_uuid = (
-                        event.get(
-                            "date",
-                            {},
-                        )
-                        .get(
-                            "uuid"
-                        )
+                        detailed_date.get("uuid")
+                        if isinstance(detailed_date, dict)
+                        else None
                     )
 
-                    if (
-                        detailed_date_uuid
-                        and detailed_date_uuid
-                        != date_uuid
-                    ):
-                        click.secho(
-                            (
-                                "WARNUNG: date_uuid "
-                                "unterscheidet sich: "
-                                f"{date_uuid} != "
-                                f"{detailed_date_uuid}"
-                            ),
-                            fg="yellow",
+                    if not detailed_date_uuid or detailed_date_uuid != date_uuid:
+                        raise click.ClickException(
+                            "Terminkonsistenzfehler: "
+                            f"Event-UUID={summary_event['uuid']}, "
+                            f"date_slug={summary_event['date_slug']}. "
+                            f"/api/events liefert date_uuid={date_uuid}, "
+                            "die Detailantwort liefert "
+                            f"date_uuid={detailed_date_uuid!r} "
+                            "(fehlend oder abweichend). "
+                            "Veröffentlichung wurde für diesen Termin abgebrochen."
                         )
 
                     publish_event(

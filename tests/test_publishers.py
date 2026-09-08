@@ -16,13 +16,13 @@ from kulturbytes_common.events import build_address, build_hashtags, format_pric
 from kulturbytes_common.media import download_image
 from kulturbytes_common.selection import parse_selection
 
-with patch.dict(os.environ, {
-    'FACEBOOK_PAGE_ID': 'test-page',
+ENV = {
+    'FACEBOOK_PAGE_ID': '123',
     'FACEBOOK_PAGE_ACCESS_TOKEN': 'test-facebook-token',
     'MASTODON_ACCESS_TOKEN': 'test-mastodon-token',
-}):
-    FACEBOOK = importlib.import_module('kulturbytes_facebook.cli')
-    MASTODON = importlib.import_module('kulturbytes_mastodon.cli')
+}
+FACEBOOK = importlib.import_module('kulturbytes_facebook.cli')
+MASTODON = importlib.import_module('kulturbytes_mastodon.cli')
 
 EVENT = {
     'uuid': 'event-1', 'title': 'Kulturabend', 'summary': 'Musik und Kultur.',
@@ -78,7 +78,7 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(request.url.path, '/api/event/event-1/date/209901011830')
             return httpx.Response(200, json={'data': EVENT})
         client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
+        with patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client
         ):
             result = CliRunner().invoke(module.main, args, input=user_input)

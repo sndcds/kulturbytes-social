@@ -16,8 +16,8 @@ Wähle die Anleitung für deine Plattform:
 ## Voraussetzungen
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
-Für deine Plattform benötigst du außerdem die in der jeweiligen Anleitung
-beschriebenen Zugangsdaten. Behalte den gesamten Repository-Ordner, da alle
+Für Veröffentlichungen und den Zugangstest benötigst du außerdem die in der
+jeweiligen Anleitung beschriebenen Zugangsdaten. Vorschau und Hilfe funktionieren ohne Tokens. Behalte den gesamten Repository-Ordner, da alle
 Publisher das Paket in `common/` verwenden.
 
 ## Schnellstart
@@ -48,9 +48,29 @@ plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 - [Mastodon konfigurieren](mastodon/README.md#konfiguration)
 - [Instagram konfigurieren](instagram/README.md#zugangsdaten-und-veröffentlichung)
 
-Bei Facebook und Mastodon müssen die Zugangsdaten auch für Vorschau und
-Befehlshilfe gesetzt sein. Instagram benötigt sie erst für `--publish`. `.env`-Dateien werden nicht automatisch geladen.
+Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-auth`.
+Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. `.env`-Dateien werden nicht automatisch geladen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
+
+## Zugang prüfen
+
+Im jeweiligen Ordner `facebook/`, `mastodon/` oder `instagram/`:
+
+```bash
+uv run main.py --check-auth
+```
+
+Der Check liest ausschließlich das konfigurierte Plattformkonto bzw. die Facebook-Seite.
+Er zeigt bei Erfolg den Namen und beendet sich mit Exitcode 0; bei fehlenden oder
+ungültigen Zugangsdaten erscheint eine Fehlermeldung mit Exitcode 1, beispielsweise
+`Error: Facebook Access Token ist abgelaufen.` Tokens werden niemals angezeigt;
+auch von der API zurückgegebene Tokenwerte werden entfernt.
+
+`--check-auth` hat Vorrang vor `--publish`, `--dry-run` und allen Auswahloptionen.
+Es gibt keine Event-Abfrage, Auswahl, Bildverarbeitung, Veröffentlichung oder
+Datenbankänderung. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff;
+er garantiert keine Veröffentlichungsrechte. Zum Veröffentlichen bleiben
+passende Zugangsdaten und die Bestätigung pro Termin erforderlich.
 
 ## Termine auswählen und veröffentlichen
 
@@ -94,6 +114,7 @@ Timer-Läufe.
 | Option | Wirkung | Standard |
 |---|---|---|
 | `--dry-run` | Vorschau der ausgewählten Beiträge anzeigen | aktiv |
+| `--check-auth` | Nur Zugang prüfen, ohne Veröffentlichung oder Datenbankzugriff | aus |
 | `--publish` | Beiträge nach einzelner Bestätigung veröffentlichen | aus |
 | `--limit 10` | Höchstens zehn Termine zur Auswahl anbieten | `50` |
 | `--limit 0` | Alle passenden Termine zur Auswahl anbieten | — |

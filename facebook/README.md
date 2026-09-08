@@ -8,7 +8,8 @@ Beim normalen Start bleibt es bei einer Vorschau.
 
 ## Voraussetzungen
 
-Du brauchst Python 3.12 oder neuer, `uv`, eine Internetverbindung und
+Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
+Zum Veröffentlichen benötigst du zusätzlich
 eine Facebook-Seiten-ID und einen Page Access Token, der Beiträge auf dieser Seite veröffentlichen darf.
 Behalte den gesamten Repository-Ordner: Der Publisher nutzt das gemeinsame
 Paket in `common/`.
@@ -16,13 +17,11 @@ Paket in `common/`.
 ## Schnellstart
 
 Öffne ein Terminal im Repository-Hauptordner. Installiere die Abhängigkeiten,
-wechsle zum Publisher und ersetze die Platzhalter durch deine Zugangsdaten:
+wechsle zum Publisher und starte die Vorschau ohne Zugangsdaten:
 
 ```bash
 uv sync --all-packages
 cd facebook
-export FACEBOOK_PAGE_ID="DEINE_SEITEN_ID"
-export FACEBOOK_PAGE_ACCESS_TOKEN="DEIN_PAGE_ACCESS_TOKEN"
 uv run main.py --dry-run --limit 10
 ```
 
@@ -38,19 +37,55 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `FACEBOOK_PAGE_ID` | ID der Zielseite | erforderlich |
-| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page Access Token für die Zielseite | erforderlich |
+| `FACEBOOK_PAGE_ID` | ID der Zielseite | für `--publish` und `--check-auth` erforderlich |
+| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page Access Token für die Zielseite | für `--publish` und `--check-auth` erforderlich |
 | `FACEBOOK_GRAPH_API_VERSION` | Verwendete Graph-API-Version | `v26.0` |
 | `DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
 
-Die erforderlichen Variablen müssen bereits beim Start gesetzt sein, auch für
-`--dry-run` und `--help`. Die Vorschau veröffentlicht nichts auf Facebook,
-lädt aber Veranstaltungsdaten aus der Kulturbytes-API.
+Zugangsdaten werden erst für `--publish` und `--check-auth` geladen.
+`--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
+Die Vorschau lädt Veranstaltungsdaten aus der Kulturbytes-API.
+
+Setze die Zugangsdaten vor dem Zugangstest oder einer Veröffentlichung:
+
+```bash
+export FACEBOOK_PAGE_ID="DEINE_NUMERISCHE_SEITEN_ID"
+export FACEBOOK_PAGE_ACCESS_TOKEN="DEIN_PAGE_ACCESS_TOKEN"
+```
 
 Die `export`-Befehle gelten für die aktuelle Terminal-Sitzung. Eine `.env`-Datei
 wird vom Programm nicht automatisch geladen. Bewahre echte Tokens außerhalb
 der versionierten Dateien auf; `.env` und lokale Datenbanken sind bereits in
 [`.gitignore`](../.gitignore) ausgeschlossen.
+
+## Zugang ohne Veröffentlichung prüfen
+
+Im Ordner `facebook/`, nach dem Setzen der Zugangsdaten:
+
+```bash
+uv run main.py --check-auth
+```
+
+Beispiel einer erfolgreichen Prüfung (Exitcode 0):
+
+```text
+✓ Facebook Token gültig
+✓ Seite erreichbar: Kulturbytes (1173614782497494)
+```
+
+Bei Fehlern endet der Check mit Exitcode 1, zum Beispiel `Error: Facebook Access Token ist abgelaufen.`
+API-Fehler können zusätzlich HTTP-Status und bereinigte Details enthalten.
+Tokens werden niemals angezeigt, auch wenn die API sie zurückgibt.
+
+`--check-auth` hat Vorrang vor `--publish`, `--dry-run` und Auswahloptionen.
+Es werden keine Kulturbytes-Termine geladen, keine Bilder oder Mediencontainer
+erzeugt und keine Beiträge oder Datenbankeinträge geschrieben. Der Check verwendet
+nur `GET /{version}/{page_id}?fields=id,name`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
+aber nicht sämtliche Veröffentlichungsrechte. Siehe [Meta Pages API](https://www.postman.com/meta/facebook/documentation/r56bjfd/facebook-api).
+
+Die zurückgegebene Seiten-ID muss mit `FACEBOOK_PAGE_ID` übereinstimmen.
+Seiten-IDs müssen numerisch sein; die API-Version hat das Format `v26.0`.
+Fehlende Zugangsdaten beenden `--publish` vor der Event-Abfrage.
 
 ## Termine auswählen und veröffentlichen
 
@@ -72,6 +107,7 @@ interaktiv und eignet sich derzeit nicht für unbeaufsichtigte Timer-Läufe.
 | Option | Wirkung | Standard |
 |---|---|---|
 | `--dry-run` | Vorschau der ausgewählten Beiträge anzeigen | aktiv |
+| `--check-auth` | Nur Zugang prüfen, ohne Veröffentlichung | aus |
 | `--publish` | Beiträge nach einzelner Bestätigung veröffentlichen | aus |
 | `--limit 10` | Höchstens zehn Termine zur Auswahl anbieten | `50` |
 | `--limit 0` | Alle passenden Termine zur Auswahl anbieten | — |
@@ -137,14 +173,13 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 | Problem | Was du prüfen kannst |
 |---|---|
 | `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
-| Beim Start erscheint ein `KeyError` für eine Variable | Setze die erforderlichen Variablen unter „Konfiguration“ im selben Terminal. |
+| Eine Zugangsdaten-Variable fehlt | Setze die erforderlichen Variablen unter „Konfiguration“ im selben Terminal. |
 | Es stehen keine Termine zur Auswahl | Prüfe den Stadtfilter. Bereits veröffentlichte Termine siehst du mit `--include-published`; vergangene oder nicht freigegebene Termine werden ausgefiltert. |
 | Facebook lehnt die Veröffentlichung ab | Prüfe die ausgegebene API-Antwort, die Seiten-ID sowie Gültigkeit und Veröffentlichungsrechte des Page Access Tokens. |
 | Ein Fotobeitrag schlägt fehl | Prüfe die Bildadresse aus der Vorschau und die API-Fehlermeldung. Bei einem fehlerhaften Bild erfolgt kein automatischer Wechsel zum Textbeitrag. |
 | Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `DATABASE_PATH` existiert und beschreibbar ist. |
 
-Die verfügbaren Optionen zeigt `uv run main.py --help`, nachdem die
-erforderlichen Umgebungsvariablen gesetzt sind.
+Die verfügbaren Optionen zeigt `uv run main.py --help` auch ohne Zugangsdaten.
 
 ## Entwicklung
 

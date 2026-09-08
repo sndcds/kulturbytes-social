@@ -8,7 +8,7 @@ import httpx
 
 from kulturbytes_common.auth import redact
 from kulturbytes_common.credentials import (
-    FACEBOOK_PAGE, FACEBOOK_USER, Credential, resolve_credential, set_secret,
+    FACEBOOK_PAGE, FACEBOOK_USER, META_SYSTEM_USER, optional_credential, set_secret, warn_legacy,
 )
 
 
@@ -18,14 +18,6 @@ class InvalidPageToken(click.ClickException):
 
 def interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def lookup(credential: Credential) -> str | None:
-    try:
-        return resolve_credential(credential)
-    except click.ClickException:
-        # An unavailable optional keyring must not prevent env/prompt recovery.
-        return None
 
 
 def request(client: httpx.Client, url: str, token: str, **params: str) -> dict:
@@ -120,8 +112,9 @@ def resolve_page_access_token(client: httpx.Client, *, user_access_token: str,
     raise click.ClickException('Facebook: Zu viele Seiten der Pagination.')
 
 
-def authenticate_page(page_id: str, version: str, *, force: bool = False, secrets: list[str] | None = None) -> str:
-    page_token = None if force else lookup(FACEBOOK_PAGE)
+def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False, secrets: list[str] | None = None) -> str:
+    warn_legacy('Facebook')
+    page_token = None if force else optional_credential(FACEBOOK_PAGE)
     secrets = secrets if secrets is not None else []
     if page_token:
         secrets.append(page_token)
@@ -144,7 +137,7 @@ def authenticate_page(page_id: str, version: str, *, force: bool = False, secret
         tty = interactive()
         if tty and not force and not click.confirm('Mit einem User Access Token wiederherstellen?', default=False):
             raise click.ClickException('Facebook: Wiederherstellung abgebrochen.')
-        user_token = lookup(FACEBOOK_USER)
+        user_token = optional_credential(FACEBOOK_USER)
         if not user_token and tty:
             user_token = click.prompt('Facebook User Access Token', hide_input=True).strip()
         if not user_token:
@@ -165,3 +158,27 @@ def authenticate_page(page_id: str, version: str, *, force: bool = False, secret
             set_secret(FACEBOOK_PAGE.service, FACEBOOK_PAGE.username, token)
             click.echo('✓ Page Access Token im OS-Keyring gespeichert.')
         return token
+
+
+def authenticate_page(page_id: str, version: str, *, force: bool = False,
+                      secrets: list[str] | None = None) -> str:
+    system_token = optional_credential(META_SYSTEM_USER)
+    if not system_token:
+        return authenticate_legacy_page(page_id, version, force=force, secrets=secrets)
+    secrets = secrets if secrets is not None else []
+    secrets.append(system_token)
+    with httpx.Client(
+        timeout=httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0),
+        follow_redirects=False,
+        headers={'User-Agent': 'Kulturbytes-Facebook-Publisher/1.0', 'Accept': 'application/json'},
+    ) as client:
+        token = resolve_page_access_token(client, user_access_token=system_token,
+                                         page_id=page_id, graph_api_version=version)
+        secrets.append(token)
+        name = validate(client, f'https://graph.facebook.com/{version}', page_id, token)
+    output = f'✓ Facebook-Seite erreichbar: {name} ({page_id})'
+    for secret in secrets:
+        output = redact(output, secret)
+    click.echo(output)
+    click.echo('✓ Facebook Publishing-Ziel mit Meta System User Token validiert')
+    return token

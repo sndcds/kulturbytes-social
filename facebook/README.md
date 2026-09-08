@@ -10,7 +10,7 @@ Beim normalen Start bleibt es bei einer Vorschau.
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
 Zum Veröffentlichen benötigst du zusätzlich
-eine Facebook-Seiten-ID und einen Page Access Token, der Beiträge auf dieser Seite veröffentlichen darf.
+eine Facebook-Seiten-ID und den gemeinsamen Meta System User Access Token mit Zugriff auf diese Seite.
 Behalte den gesamten Repository-Ordner: Der Publisher nutzt das gemeinsame
 Paket in `common/`.
 
@@ -37,7 +37,7 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `FACEBOOK_PAGE_ID` | ID der Zielseite | für `--publish` und `--check-auth` erforderlich |
-| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page Access Token für die Zielseite | alternativ aus Keyring oder User Token ableitbar |
+| `META_SYSTEM_USER_ACCESS_TOKEN` | Gemeinsamer Zugang für Facebook und Instagram | alternativ im OS-Keyring |
 | `FACEBOOK_GRAPH_API_VERSION` | Verwendete Graph-API-Version | `v26.0` |
 | `DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
 
@@ -49,7 +49,8 @@ Setze die Zugangsdaten vor dem Zugangstest oder einer Veröffentlichung:
 
 ```bash
 export FACEBOOK_PAGE_ID="DEINE_NUMERISCHE_SEITEN_ID"
-export FACEBOOK_PAGE_ACCESS_TOKEN="DEIN_PAGE_ACCESS_TOKEN"
+# Token verdeckt im gemeinsamen OS-Keyring speichern:
+uv run kulturbytes-social facebook --credentials set
 ```
 
 Die `export`-Befehle gelten für die aktuelle Terminal-Sitzung. Eine `.env`-Datei
@@ -68,8 +69,8 @@ Im Repository-Hauptordner:
 
 ```bash
 uv run kulturbytes-social facebook --credentials status
-uv run kulturbytes-social facebook --credentials set --credential page
-uv run kulturbytes-social facebook --credentials delete --credential page
+uv run kulturbytes-social facebook --credentials set --credential meta
+uv run kulturbytes-social facebook --credentials delete --credential meta
 ```
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
@@ -79,11 +80,11 @@ Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombination
 mit `--publish`, `--check-auth` oder `--resolve-page-token` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
 
-`--credential user` verwaltet den User Access Token; ohne Auswahl fragt `set`/`delete`
-nach `page` oder `user`. Service: `kulturbytes-social/facebook`; Benutzernamen:
-`page-access-token` und `user-access-token`. Umgebungsvariablen:
-`FACEBOOK_PAGE_ACCESS_TOKEN` und `FACEBOOK_USER_ACCESS_TOKEN`. Veröffentlichen
-verwendet einen validierten Page Token, der bei Bedarf aus dem User Token abgeleitet wird. `FACEBOOK_PAGE_ID` bleibt eine Umgebungsvariable.
+Standardmäßig verwaltet dieser Befehl den gemeinsamen Meta-Token unter Service
+`kulturbytes-social/meta`, Benutzername `system-user-access-token`. Instagram nutzt
+denselben Eintrag; das Löschen betrifft beide Publisher. `FACEBOOK_PAGE_ID` bleibt
+eine Environment-Variable. Legacy-Selektoren `page` und `user` bleiben vorübergehend
+mit Deprecation-Hinweis verfügbar; ohne Selektor wird immer `meta` verwendet.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
@@ -105,8 +106,8 @@ uv run kulturbytes-social facebook --check-auth
 Beispiel einer erfolgreichen Prüfung (Exitcode 0):
 
 ```text
-✓ Facebook Token gültig
-✓ Seite erreichbar: Kulturbytes (1173614782497494)
+✓ Facebook-Seite erreichbar: Kulturbytes (1173614782497494)
+✓ Facebook Publishing-Ziel mit Meta System User Token validiert
 ```
 
 Bei Fehlern endet der Check mit Exitcode 1, zum Beispiel `Error: Facebook Access Token ist abgelaufen.`
@@ -116,7 +117,7 @@ Tokens werden niemals angezeigt, auch wenn die API sie zurückgibt.
 `--check-auth` hat Vorrang vor `--publish`, `--dry-run` und Auswahloptionen.
 Es werden keine Kulturbytes-Termine geladen, keine Bilder oder Mediencontainer
 erzeugt und keine Beiträge oder Datenbankeinträge geschrieben. Der Check verwendet
-`GET /{version}/{page_id}?fields=id,name` und bei Wiederherstellung zusätzlich `/me/accounts`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
+`GET /{version}/{page_id}?fields=id,name` und im gemeinsamen Meta-Pfad zunächst `/me/accounts`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
 aber nicht sämtliche Veröffentlichungsrechte. Siehe [Meta Pages API](https://www.postman.com/meta/facebook/documentation/r56bjfd/facebook-api).
 
 Die zurückgegebene Seiten-ID muss mit `FACEBOOK_PAGE_ID` übereinstimmen.
@@ -232,42 +233,38 @@ Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 
 [AGPL-3.0](../LICENSE)
 
-## Page Token wiederherstellen
+## Gemeinsamer Meta System User Token
 
-```bash
-uv run kulturbytes-social facebook --resolve-page-token
-```
+Der normale Zugang benötigt nur `META_SYSTEM_USER_ACCESS_TOKEN` aus Environment
+oder dem gemeinsamen Keyring. Der System User muss im Meta Business Portfolio der
+App und der Zielseite mit passenden Rechten zugeordnet sein (unter anderem
+`pages_show_list`, `pages_read_engagement`, `pages_manage_posts`; je nach Asset-Zugriff
+auch `business_management`). Die Abfrage `/me/accounts?fields=id,name,access_token`
+wählt die exakte `FACEBOOK_PAGE_ID` auch auf Folgeseiten. Cursor werden ausschließlich
+am festen Graph-Endpunkt verwendet; fremde `paging.next`-URLs werden abgewiesen.
+Der abgeleitete Page Token muss anschließend die Seiten-ID-/Namensprüfung bestehen.
+Er wird nur im Speicher gehalten: keine Recovery-Frage, keine separate Tokenpflege
+und kein Speichern des abgeleiteten Tokens. Auth-Fehler brechen vor Event-, Bild-
+und Datenbankzugriffen ab. Ein API-Fehler löst keinen Legacy-Fallback aus.
 
-Ein User Access Token gehört einem Facebook-Nutzer und erlaubt die Abfrage seiner
-verwalteten Seiten. Der daraus abgeleitete Page Access Token gehört der konfigurierten
-Seite und wird zum Veröffentlichen verwendet. `FACEBOOK_PAGE_ID` bleibt erforderlich.
+## Legacy-Migration und frühere Recovery
 
-`--check-auth` und `--publish` prüfen zuerst den Page Token aus der Environment-Variable,
-sonst aus dem OS-Keyring. Fehlt er oder meldet Meta Code 190 (einschließlich Ablaufcode
-463), folgt der User Token aus `FACEBOOK_USER_ACCESS_TOKEN`, sonst aus dem Keyring.
-Eine gesetzte, auch leere Environment-Variable unterdrückt den jeweiligen Keyring-Wert.
-Ein nicht verfügbarer optionaler Keyring verhindert die Wiederherstellung aus Environment
-oder interaktiver Eingabe nicht. Berechtigungsfehler (10/200), Netzwerkfehler und
-ungültige Validierungsantworten brechen ab.
+Nur wenn kein gemeinsamer Token verfügbar ist, bleiben die bisherigen Page-/User-Tokens
+als veralteter Fallback verfügbar: jeweils Environment vor altem OS-Keyring.
+Auch eine leere gemeinsame Environment-Variable unterdrückt den gemeinsamen Keyring
+und erlaubt Legacy-Fallback. Die Migration und Entfernung alter Einträge beschreibt
+[die Projektübersicht](../README.md#migration-bestehender-meta-zugänge).
 
-Im TTY wird die Wiederherstellung zunächst bestätigt (Standard: Nein). Fehlt ein User
-Token, folgt eine verdeckte Eingabe. Ohne TTY gibt es keine Rückfragen; ohne vorhandenen
-User Token endet der Befehl mit einem Fehler. `--resolve-page-token` fordert die Ableitung
-gezielt an und überspringt die anfängliche Page-Token-Prüfung und Wiederherstellungsfrage.
-Wie `--check-auth` hat diese Option Vorrang vor Veröffentlichung und Eventauswahl.
+Im Legacy-Pfad validieren `--check-auth` und `--publish` zunächst den Page Token.
+Fehlt er oder meldet Meta Code 190 (einschließlich Subcode 463), wird über den User
+Token wiederhergestellt. Nur im TTY gibt es eine Bestätigung (Standard: Nein),
+gegebenenfalls verdeckte User-Token-Eingabe und nach erfolgreicher Validierung eine
+separate Speicherbestätigung. Ohne TTY muss der User Token bereits vorhanden sein.
+Fehler verändern bestehende Credentials nicht. Die veraltete Option
+`--resolve-page-token` erzwingt diese Ableitung; mit gemeinsamem Meta-Token entspricht
+sie `--check-auth`. Beide Prüfoptionen haben Vorrang vor Veröffentlichung.
 
-Die Abfrage `GET /{version}/me/accounts?fields=id,name,access_token` wählt ausschließlich
-die konfigurierte Seiten-ID, auch auf Folgeseiten. Folgeseiten werden über geprüfte Cursor
-am festen Graph-Endpunkt abgefragt; fremde URLs werden nicht aufgerufen. Der neue Token
-muss anschließend `GET /{version}/{page_id}?fields=id,name` erfolgreich bestehen.
-Erst danach kann im TTY das Speichern im bestehenden OS-Keyring bestätigt werden
-(Standard: Ja). Eine fehlgeschlagene Wiederherstellung verändert keine gespeicherten Tokens.
-Environment-Variablen werden nicht verändert; ein dort abgelaufener Token bleibt beim
-nächsten Aufruf vorrangig, bis die Umgebung angepasst wird. Der aktuelle Aufruf verwendet
-den neuen Token direkt im Speicher.
-
-Vor `--publish` erfolgt diese Prüfung vor Event-, Bild- und Datenbankzugriffen.
-Die Bestätigung jedes Beitrags bleibt erforderlich. Dry Runs benötigen keine Tokens.
-Tokens werden niemals ausgegeben oder in SQLite, `.env` oder Dateien gespeichert;
-Auth-Fehler zeigen HTTP-Status und gegebenenfalls Meta-Code statt roher Antwortkörper.
-Dies ist kein OAuth-Browserlogin und keine Erneuerung eines User Tokens.
+Die Kompatibilität bleibt für diese Übergangsversion bestehen; Entfernung erst nach
+separater Ankündigung in einer kommenden inkompatiblen Version. Es gibt keinen
+Browser-OAuth-Login, keine User-/System-Token-Erneuerung und keine automatische
+System-User-Provisionierung. API-Grundlage: [Metas Pages-Token-Abfrage](https://www.postman.com/meta/facebook/request/bqfxwbp/get-access-tokens-of-pages-you-manage).

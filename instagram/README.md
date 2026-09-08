@@ -36,44 +36,56 @@ konfigurierte Meta-App und einen gültigen Token mit Veröffentlichungsrechten.
 Das Programm übernimmt bestehende Zugangsdaten; es implementiert keinen OAuth-Login
 und keine automatische Token-Erneuerung.
 
-Standardmäßig wird **Instagram Login** verwendet. Dieser Zugang benötigt keine
-verknüpfte Facebook-Seite. Nutze die Instagram-Konto-ID und den Instagram User Access
-Token aus diesem Login mit `instagram_business_basic` und
-`instagram_business_content_publish`. Für fremde Konten können App Review und
-Advanced Access erforderlich sein. Die genauen Voraussetzungen beschreibt
-[Metas Instagram-API-Dokumentation](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api?entity=request-23987686-ab559ffb-8e2c-4b0a-b43a-5737b6d2f672).
+Der bevorzugte Zugang verwendet denselben `META_SYSTEM_USER_ACCESS_TOKEN` wie Facebook
+über die **Instagram API mit Facebook Login** (`graph.facebook.com`). Der Meta System
+User muss im Business Portfolio Zugriff auf App, Facebook-Seite und das damit
+verknüpfte Instagram-Professional-Konto erhalten haben. Die erforderlichen Rechte
+umfassen `instagram_basic` und `instagram_content_publish`; für Seitenzugriff können
+zusätzlich `pages_show_list`, `pages_read_engagement` und `business_management` nötig sein.
+`INSTAGRAM_USER_ID` ist die numerische Instagram-Konto-ID für diesen API-Modus,
+nicht die Facebook-Seiten-ID. IDs aus einem anderen Login-Modus müssen geprüft werden.
+Siehe [Metas Instagram-API-Dokumentation](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api?entity=request-23987686-8365d531-b49f-4e07-8e76-19f8608947a3)
+für User-/System-User-Tokens und die Facebook-Login-API.
 
 ```bash
 export INSTAGRAM_USER_ID="DEINE_NUMERISCHE_INSTAGRAM_KONTO_ID"
-export INSTAGRAM_ACCESS_TOKEN="DEIN_INSTAGRAM_ACCESS_TOKEN"
-export INSTAGRAM_LOGIN_TYPE="instagram"
+export INSTAGRAM_LOGIN_TYPE="facebook"
+# Einmal für Facebook und Instagram gemeinsam, mit verdeckter Eingabe:
+uv run kulturbytes-social instagram --credentials set
+uv run kulturbytes-social instagram --check-auth
 uv run kulturbytes-social instagram --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
 ```
 
-Vor jedem Beitrag erscheint eine Bestätigungsfrage. Ohne Zustimmung entstehen
-weder Mediencontainer noch Instagram-Beitrag. Ohne `--publish` bleibt es beim Dry-Run.
-
-Alternativ unterstützt `INSTAGRAM_LOGIN_TYPE=facebook` die **Instagram API mit
-Facebook Login** über `graph.facebook.com`. Dafür muss das Professional-Konto mit
-einer Facebook-Seite verknüpft sein. `INSTAGRAM_USER_ID` ist die ID des zugehörigen
-Instagram-Kontos, nicht die Facebook-Seiten-ID. Verwende einen für diesen Zugang
-gültigen Token mit `instagram_basic` und `instagram_content_publish`; für die
-Seitenermittlung bzw. den Zugriff werden auch `pages_show_list` und
-`pages_read_engagement` benötigt. Ein vorhandener Facebook-Publishing-Token besitzt
-diese Instagram-Rechte nicht automatisch. Siehe
-[Metas Facebook-Login-Anleitung](https://www.postman.com/meta/instagram/folder/u4g5a2a/instagram-api-with-facebook-login).
+Alternativ kann `META_SYSTEM_USER_ACCESS_TOKEN` extern in der Umgebung bereitgestellt
+werden. Der Token wird direkt für Zielprüfung und Container-/Publish-Aufrufe verwendet.
+Vor jedem Beitrag erscheint weiterhin eine Bestätigungsfrage. Ohne Zustimmung entstehen
+weder Mediencontainer noch Beitrag. Ohne `--publish` bleibt es beim Dry-Run.
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `INSTAGRAM_USER_ID` | Numerische Instagram-Konto-ID des gewählten Login-Verfahrens | erforderlich für `--publish` und `--check-auth` |
-| `INSTAGRAM_ACCESS_TOKEN` | Passender Access Token | erforderlich für `--publish` und `--check-auth` |
-| `INSTAGRAM_LOGIN_TYPE` | `instagram` oder `facebook` | `instagram` |
-| `INSTAGRAM_GRAPH_API_VERSION` | Graph-API-Version für deine App | `v26.0` |
-| `DATABASE_PATH` | Eigene SQLite-Datenbank | `instagram_posts.sqlite3` |
+| `INSTAGRAM_USER_ID` | Numerische Instagram-Konto-ID | erforderlich für Auth/Publish |
+| `META_SYSTEM_USER_ACCESS_TOKEN` | Gemeinsamer Meta-Zugang | alternativ im OS-Keyring |
+| `INSTAGRAM_LOGIN_TYPE` | API-Modus | `facebook` mit Meta-Token; `instagram` mit Legacy-Token |
+| `INSTAGRAM_GRAPH_API_VERSION` | Graph-Version | `v26.0` |
+| `DATABASE_PATH` | Optionaler SQLite-Pfad | stabiler Plattform-State-Pfad, siehe unten |
 
-`v26.0` ist der konfigurierbare Projektstandard, keine automatische Ermittlung
-der neuesten API-Version. `.env`-Dateien werden nicht automatisch geladen.
-Tokens gehören nicht in versionierte Dateien oder geteilte Terminal-Ausgaben.
+### Legacy-Migration
+
+Der gemeinsame Token aus Environment bzw. Keyring hat Vorrang vor
+`INSTAGRAM_ACCESS_TOKEN` und dem alten Instagram-Keyring. Nur wenn kein gemeinsamer
+Token verfügbar ist, wird der Legacy-Zugang mit Deprecation-Hinweis verwendet.
+Ein leerer Meta-Environment-Wert unterdrückt den gemeinsamen Keyring und erlaubt
+Legacy-Fallback. Ungültige gemeinsame Tokens lösen keinen Legacy-Fallback aus.
+
+Legacy-Zugänge behalten beide bisherigen Modi: `instagram` (bisheriger Standard)
+mit `graph.instagram.com` und `instagram_business_basic` / `instagram_business_content_publish`,
+oder `facebook` mit passendem Legacy-Token. Ein explizites `INSTAGRAM_LOGIN_TYPE=instagram`
+zusammen mit gemeinsamem Meta-Token ist ein Konfigurationsfehler; der Token wird niemals
+an `graph.instagram.com` gesendet. Zur Migration den gemeinsamen Token speichern,
+`INSTAGRAM_LOGIN_TYPE=facebook` setzen oder die alte Variable entfernen und `--check-auth`
+ausführen. Den alten Eintrag optional mit `--credentials delete --credential access` löschen.
+Er bleibt bis zu einer separat angekündigten inkompatiblen Version unterstützt.
+Keine automatische Token-Migration, OAuth-Anmeldung oder System-User-/Asset-Provisionierung.
 
 ## Optionaler OS-Keyring
 
@@ -97,7 +109,10 @@ Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombination
 mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
 
-Service: `kulturbytes-social/instagram`, Benutzername: `access-token`.
+Standard und `--credential meta`: Service `kulturbytes-social/meta`, Benutzername
+`system-user-access-token`, gemeinsam mit Facebook. Löschen betrifft beide Publisher.
+`--credential access` verwaltet vorübergehend den veralteten Instagram-Eintrag
+unter `kulturbytes-social/instagram` / `access-token`.
 Instanz-/Kontokonfiguration wird weiterhin über Umgebungsvariablen gesetzt.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
@@ -138,7 +153,7 @@ aber nicht sämtliche Veröffentlichungsrechte. Siehe [Meta Instagram API](https
 Der Graph-Host folgt `INSTAGRAM_LOGIN_TYPE`: `graph.instagram.com` für
 `instagram`, `graph.facebook.com` für `facebook`. Die zurückgegebene Konto-ID
 muss mit `INSTAGRAM_USER_ID` übereinstimmen. Hilfe und Dry-Run benötigen keine Tokens;
-`--publish` prüft die erforderliche Konfiguration vor der Event-Abfrage.
+`--publish` validiert dieselbe Konto-ID vor Event-, Bild- und Datenbankzugriffen.
 
 ## Auswahloptionen
 

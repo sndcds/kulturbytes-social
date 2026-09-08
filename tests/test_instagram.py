@@ -64,6 +64,9 @@ class InstagramTests(unittest.TestCase):
                 return httpx.Response(200, content=self.image)
             self.assertEqual(request.headers['Authorization'], 'Bearer secret-token')
             self.assertNotIn('access_token', request.url.params)
+            if path == '/v26.0/123':
+                self.assertEqual(request.method, 'GET')
+                return httpx.Response(200, json={'id': '123', 'username': 'kulturbytes'})
             if path == '/v26.0/123/media':
                 self.assertEqual(request.method, 'POST')
                 data = parse_qs(request.content.decode())
@@ -81,10 +84,12 @@ class InstagramTests(unittest.TestCase):
                 return httpx.Response(200, json={'id': '789'})
             self.fail(f'Unexpected request: {request.method} {path}')
 
-        client = httpx.Client(transport=httpx.MockTransport(respond))
+        client_class = httpx.Client
+        def make_client(**kwargs):
+            return client_class(transport=httpx.MockTransport(respond), **kwargs)
         with patch.dict(os.environ, ENV if env is None else env, clear=True), patch.object(
             instagram, 'DATABASE_PATH', self.database,
-        ), patch('kulturbytes_common.workflow.httpx.Client', return_value=client):
+        ), patch('kulturbytes_common.workflow.httpx.Client', side_effect=make_client):
             result = CliRunner().invoke(cli, ['instagram'] + args, input=user_input)
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         return result

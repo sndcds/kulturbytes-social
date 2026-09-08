@@ -484,7 +484,7 @@ def publish_event(
 
 @click.command("facebook", help="Kulturbytes-Termine für Facebook auswählen, prüfen und veröffentlichen.")
 @credential_options("Facebook")
-@click.option("--resolve-page-token", is_flag=True, help="Page Token über User Token ableiten und prüfen; lädt keine Events und veröffentlicht nichts.")
+@click.option("--resolve-page-token", is_flag=True, help="Veraltet: Legacy-Page-Token ableiten; mit Meta-Token identisch zu --check-auth.")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",

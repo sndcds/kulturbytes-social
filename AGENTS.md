@@ -301,30 +301,46 @@ Never call `secret-tool` from application code or implement custom encryption.
 Resolution is environment > OS keyring > missing. Even an explicitly empty environment
 variable suppresses keyring access; whitespace-only values count as missing. Generic
 lookup never prompts. Help/imports/dry runs must not touch the keyring. Config loaders
-and auth checks use the same resolver. Facebook adds recovery for missing Page Tokens
-or Meta OAuth code 190 (including subcode 463): User Token environment > keyring >
-hidden TTY prompt. Empty environment overrides still suppress keyring lookup.
-Permission codes 10/200 and network/shape/identity errors fail closed. Optional keyring
-lookup failure permits recovery from env or prompt. Interactive recovery requires
-confirmation (default false); non-TTY execution never prompts. `--resolve-page-token`
-explicitly derives and validates a Page Token without events, publishing or database access,
-and takes precedence over publish/selection flags. Resolve the exact configured page ID
-through paginated GET `/me/accounts?fields=id,name,access_token`, using only validated
-cursors at the fixed Graph endpoint. Validate the new token via GET page ID with id/name.
-Only after validation and separate TTY confirmation may the existing keyring Page Token
-be replaced. Never mutate environment or store tokens elsewhere. No User Token refresh
-or OAuth browser login is implemented. Facebook publishing validates/recovers credentials
-before database/event/image access and carries the validated token in memory to publication.
-Dry runs remain credential-free. Auth errors expose status/code, never raw response bodies.
-Regression coverage is in `tests/test_facebook_recovery.py`.
+and auth checks use the same resolver.
 
-Stable mappings:
-- `kulturbytes-social/facebook`: `page-access-token` (`FACEBOOK_PAGE_ACCESS_TOKEN`), `user-access-token` (`FACEBOOK_USER_ACCESS_TOKEN`).
-- `kulturbytes-social/instagram`: `access-token` (`INSTAGRAM_ACCESS_TOKEN`).
+Facebook and Instagram prefer `META_SYSTEM_USER_ACCESS_TOKEN`, falling back to the
+single shared OS-keyring entry. Only absence (including an explicitly empty shared
+environment override) or an unavailable optional shared keyring permits legacy
+credential lookup. Invalid shared credentials or incompatible login configuration
+must fail closed, never trigger a legacy retry. Environment-only operation works
+without an OS keyring.
+
+Facebook resolves the exact page using the existing safely paginated `/me/accounts`
+lookup and validates the derived Page Token against `FACEBOOK_PAGE_ID`. Shared-token
+operation never prompts for repair or persists derived Page Tokens; use them only
+in memory for the current invocation. Instagram uses the System User token directly
+on `graph.facebook.com`; its default login is `facebook` when the shared token is
+present. Explicit `INSTAGRAM_LOGIN_TYPE=instagram` with a shared token is rejected
+before network access. Both publishers validate their configured target before
+opening publication databases, loading events/images, or creating remote content.
+
+The Meta System User must already have the required Business Portfolio/app/Page/
+linked Instagram Professional Account access and permissions. No browser OAuth,
+token refresh, automatic migration, System User creation or asset provisioning.
+
+Legacy compatibility remains for this transition release, with a concise deprecation
+warning and removal only in a separately announced breaking release. Old Facebook
+Page/User env/keyring credentials retain the PR #17 recovery behavior, isolated in
+`authenticate_legacy_page`. Only that path offers TTY recovery and separately confirmed
+Page Token storage. The deprecated `--resolve-page-token` works for legacy recovery;
+with a shared token it performs the same read-only validation as `--check-auth`.
+Old Instagram credentials retain their default `instagram` login and explicit `facebook`
+mode. No existing keyring entry is automatically overwritten or deleted.
+
+Stable mappings (both Meta commands default to `meta` for status/set/delete):
+- `kulturbytes-social/meta`: `system-user-access-token` (`META_SYSTEM_USER_ACCESS_TOKEN`), shared by Facebook and Instagram.
+- Legacy `kulturbytes-social/facebook`: `page-access-token` (`FACEBOOK_PAGE_ACCESS_TOKEN`), `user-access-token` (`FACEBOOK_USER_ACCESS_TOKEN`).
+- Legacy `kulturbytes-social/instagram`: `access-token` (`INSTAGRAM_ACCESS_TOKEN`).
 - `kulturbytes-social/mastodon`: `access-token` (`MASTODON_ACCESS_TOKEN`).
 
 Platform subcommands retain `--credentials status|set|delete`
-and `--credential page|user` for Facebook (`access` for the others). Status shows only
+and default `--credential meta` for Facebook/Instagram. Legacy selectors are
+`page|user` for Facebook and `access` for Instagram; Mastodon keeps `access`. Status shows only
 presence according to resolution precedence. Set prompts with `hide_input=True`;
 delete requires confirmation and affects only keyring storage. Reject combinations
 with `--publish`, `--check-auth`, or Facebook `--resolve-page-token`; ignore event-selection flags during management.
@@ -335,8 +351,8 @@ or chains consisting solely of those) are accepted; reject file/plaintext/null/f
 backends. Backend exceptions are converted to concise Click errors without raw details.
 Never display token values, fragments, lengths, or hashes. Do not persist tokens in
 SQLite, .env, config/log/temp files or shell startup files. Non-secret IDs, API versions,
-login types and instance URLs remain environment configuration. Service names are per
-platform, so changing accounts requires the matching token.
+login types and instance URLs remain environment configuration. Meta shares one service across Facebook/Instagram; Mastodon is separate. Changing
+accounts requires matching asset access.
 
 Ubuntu optional packages: `sudo apt install gnome-keyring libsecret-tools`. Use an
 unlocked Secret Service session. Keyring is optional for headless/CI/systemd/container
@@ -524,7 +540,7 @@ Expected environment variables:
 
 ```text
 FACEBOOK_PAGE_ID
-FACEBOOK_PAGE_ACCESS_TOKEN
+META_SYSTEM_USER_ACCESS_TOKEN
 FACEBOOK_GRAPH_API_VERSION
 ```
 
@@ -737,13 +753,13 @@ confirmation and dry-run behavior aligned with the other platforms.
   with a read-only image request, also in dry run. Missing/non-JPEG images fail the event;
   there is no text fallback, image conversion, external hosting, or generated image.
   Image dimensions and other platform restrictions are validated remotely by Meta.
-- `INSTAGRAM_LOGIN_TYPE=instagram` (default) uses `graph.instagram.com` with an Instagram
+- Legacy `INSTAGRAM_LOGIN_TYPE=instagram` (default only without a shared Meta token) uses `graph.instagram.com` with an Instagram
   User Access Token and `instagram_business_basic` / `instagram_business_content_publish`.
   `facebook` uses `graph.facebook.com` and requires a linked professional Instagram account
   and the appropriate Facebook Login permissions, including `instagram_basic` and
   `instagram_content_publish`. See `instagram/README.md` for setup.
 - `INSTAGRAM_USER_ID` is the numeric Instagram account ID for the selected login flow;
-  `INSTAGRAM_ACCESS_TOKEN` must match it. Neither is required for preview/help; both are required for `--publish` and `--check-auth`.
+  the resolved shared Meta token (or deprecated `INSTAGRAM_ACCESS_TOKEN`) must match it. Neither is required for preview/help; both are required for `--publish` and `--check-auth`.
   `INSTAGRAM_GRAPH_API_VERSION` defaults to `v26.0`, matching the project's Meta version default.
 - The caption has an application limit of 2,200 characters and up to five generated
   hashtags, prioritizing Kulturbytes and city. Trim summary first, preserve the full
@@ -923,7 +939,7 @@ __pycache__/
 
 ```env
 FACEBOOK_PAGE_ID=
-FACEBOOK_PAGE_ACCESS_TOKEN=
+META_SYSTEM_USER_ACCESS_TOKEN=
 FACEBOOK_GRAPH_API_VERSION=v26.0
 DATABASE_PATH=facebook_posts.sqlite3
 ```
@@ -1031,7 +1047,7 @@ tests/test_publishers.py
 tests/test_instagram.py
 ```
 
-Each platform owns its configuration, final formatting, publication calls, and database schema/writer. The root CLI directly registers `facebook_command`, `mastodon_command`, and `instagram_command`. Credential management remains platform-scoped through the existing options, e.g. `kulturbytes-social facebook --credentials set --credential page`; do not duplicate credential logic in the root. Tests invoke the root CLI for all platform scenarios. Preserve the dependency direction root → platform → common.
+Each platform owns its configuration, final formatting, publication calls, and database schema/writer. The root CLI directly registers `facebook_command`, `mastodon_command`, and `instagram_command`. Credential management remains platform-scoped through the existing options, e.g. `kulturbytes-social facebook --credentials set --credential meta`; do not duplicate credential logic in the root. Tests invoke the root CLI for all platform scenarios. Preserve the dependency direction root → platform → common.
 
 ---
 

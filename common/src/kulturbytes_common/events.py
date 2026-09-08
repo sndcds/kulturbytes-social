@@ -1,13 +1,12 @@
 import re
 import unicodedata
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from .timezone import TIMEZONE, application_today
 
 import httpx
 
 KULTURBYTES_EVENTS_API = "https://api.kulturbytes.de/api/events"
 KULTURBYTES_EVENT_API = "https://api.kulturbytes.de/api/event"
-TIMEZONE = ZoneInfo("Europe/Berlin")
 
 
 def get_events(
@@ -59,7 +58,7 @@ def should_publish(
         start_date
     )
 
-    return event_date >= date.today()
+    return event_date >= application_today()
 
 
 def get_event_url(

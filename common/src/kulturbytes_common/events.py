@@ -4,6 +4,8 @@ from datetime import date, datetime
 from .timezone import TIMEZONE, application_today
 
 import httpx
+import click
+from .models import validate_list, validate_detail
 
 KULTURBYTES_EVENTS_API = "https://api.kulturbytes.de/api/events"
 KULTURBYTES_EVENT_API = "https://api.kulturbytes.de/api/event"
@@ -11,6 +13,7 @@ KULTURBYTES_EVENT_API = "https://api.kulturbytes.de/api/event"
 
 def get_events(
     client: httpx.Client,
+    *, target: tuple[str, str] | None = None,
 ) -> list[dict]:
     response = client.get(
         KULTURBYTES_EVENTS_API,
@@ -18,9 +21,12 @@ def get_events(
 
     response.raise_for_status()
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError:
+        raise click.ClickException("Kulturbytes: ungültige JSON-Antwort.") from None
 
-    return payload["data"]["events"]
+    return validate_list(payload, target=target)
 
 
 def get_event_details(
@@ -38,9 +44,18 @@ def get_event_details(
     response = client.get(url)
     response.raise_for_status()
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError:
+        raise click.ClickException("Kulturbytes: ungültige JSON-Antwort.") from None
 
-    return payload["data"]
+    try:
+        return validate_detail(payload)
+    except click.ClickException:
+        raise click.ClickException(
+            f"Terminkonsistenzfehler/ungültige Detaildaten: Event-UUID={event_uuid}, "
+            f"date_slug={date_slug}, date_uuid={event['date_uuid']}; Veröffentlichung abgebrochen."
+        ) from None
 
 
 def should_publish(

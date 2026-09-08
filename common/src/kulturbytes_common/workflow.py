@@ -45,9 +45,7 @@ def run_publisher(
             follow_redirects=True,
             headers=headers,
         ) as client:
-            events = get_events(
-                client
-            )
+            events = get_events(client, target=(event_uuid, date_identifier) if event_uuid is not None else None)
 
             click.echo(
                 f"{len(events)} "
@@ -116,7 +114,7 @@ def run_publisher(
                     )
 
                     if (
-                        venue_city.casefold()
+                        (venue_city or "").casefold()
                         != city.casefold()
                     ):
                         continue
@@ -233,7 +231,8 @@ def run_publisher(
                         else None
                     )
 
-                    if not detailed_date_uuid or detailed_date_uuid != date_uuid:
+                    if (not detailed_date_uuid or detailed_date_uuid != date_uuid
+                            or event["uuid"] != summary_event["uuid"] or event["date"]["slug"] != summary_event["date_slug"]):
                         raise click.ClickException(
                             "Terminkonsistenzfehler: "
                             f"Event-UUID={summary_event['uuid']}, "

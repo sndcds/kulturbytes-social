@@ -352,23 +352,31 @@ optionale Felder und `null` werden berücksichtigt. Die Listenzusammenfassung ha
 weiter Vorrang vor der Detailbeschreibung. „Heute“ richtet sich für alle Plattformen
 nach `Europe/Berlin`, unabhängig von der Zeitzone des Rechners.
 
-Bildabrufe erlauben nur HTTPS ohne eingebettete Zugangsdaten. Literale IP-Adressen
-und sämtliche DNS-Antworten müssen global erreichbar sein; lokale, private,
-reservierte, Link-Local- und Multicast-Ziele werden abgelehnt. Jeder Request,
-Retry und jeder der höchstens fünf Redirects wird erneut geprüft. Das gilt für
-Facebook-/Mastodon-Downloads und die Instagram-JPEG-Prüfung. Instagram erhält die
-abschließend geprüfte URL. Die DNS-Vorabprüfung bindet die spätere Verbindung
-**nicht** an eine bestimmte IP: DNS-Rebinding zwischen Prüfung und Verbindung,
-Proxy-Auflösung und Instagrams eigener späterer Abruf bleiben außerhalb dieser
-Garantie. Ein eigener Socket-Transport wird nicht eingeführt. Download-Größenlimits
-sind weiterhin Gegenstand von Issue #6.
+Bildabrufe sind auf **`https://api.kulturbytes.de` (Port 443)** beschränkt; dieser
+Medienhost ist durch die vorhandenen Kulturbytes-Beispiele belegt. Andere Hosts,
+IP-URLs und eingebettete Zugangsdaten werden abgelehnt. Alle DNS-Antworten müssen
+öffentliche, nicht reservierte Adressen sein. Der Medien-Transport verbindet
+anschließend direkt zur geprüften numerischen IP. Der ursprüngliche Host-Header
+und TLS-SNI bleiben `api.kulturbytes.de`; die Zertifikatsprüfung bleibt aktiviert.
+Damit kann ein Wechsel der DNS-Antwort zwischen Prüfung und Verbindung den
+lokalen Medienabruf nicht auf eine private Adresse umlenken.
+
+Jeder Retry und jeder der höchstens fünf expliziten Redirects durchläuft diese
+Prüfung erneut. Ein eigener Medien-Client mit `trust_env=False` und direktem
+HTTPX-Transport ignoriert `HTTP_PROXY`, `HTTPS_PROXY` und `ALL_PROXY`; API-Tokens,
+Cookies und Auth-Konfiguration werden nicht übernommen. Dies gilt für Facebook,
+Mastodon und die Instagram-JPEG-Prüfung. Instagram erhält weiterhin die geprüfte
+öffentliche Host-URL; Metas eigener späterer Abruf unterliegt Metas Netzwerkschutz,
+nicht unserem lokalen Transport. Download-Größenlimits bleiben Gegenstand von Issue #6.
 
 Sichere GETs für Kulturbytes, Auth-Prüfungen, Instanzdaten, Polling und Medien
-verwenden denselben HTTP-Client und höchstens drei Versuche bei 429/502/503/504,
+verwenden pro Retry-Folge denselben Client und höchstens drei Versuche bei 429/502/503/504,
 ConnectTimeout, ReadTimeout und ConnectError. Die Wartezeiten betragen normalerweise
 0,5 und 1 Sekunde; `Retry-After` (Sekunden oder HTTP-Datum) wird auf fünf Sekunden
-pro Pause begrenzt. Netzwerkphasen verwenden fünf Sekunden Timeout. Das ist keine
-globale Frist für DNS oder einen fortlaufenden Download. Bei gestreamten Medien
+pro Pause begrenzt. Ohne ausdrückliches `timeout=` übernimmt `safe_get` die
+Timeouts des verwendeten Clients (im Publisher: Connect/Pool 10, Read/Write 60 Sekunden).
+Ein ausdrückliches Override bleibt erhalten; es gibt keinen versteckten Fünf-Sekunden-Timeout
+und keine zusätzliche globale Frist für DNS oder einen fortlaufenden Download. Bei gestreamten Medien
 gelten die Retries bis zum Empfang der Header; ein abgebrochener Body wird nicht
 fortgesetzt. **POSTs werden nie automatisch wiederholt**, auch Medienuploads und
 Instagram-Container nicht. Die bestehenden fachlichen Polling-Intervalle bleiben.
@@ -378,8 +386,14 @@ Instagram-Container nicht. Die bestehenden fachlichen Polling-Intervalle bleiben
 Jede Datenbank erhält zusätzlich `publisher_metadata` und `publication_attempts`.
 Die erste Tabelle schützt vor einer versehentlichen Nutzung durch eine andere
 Plattform. Das Journal speichert pro Versuch eine eigene UUID, Plattform, Termin,
-minimale Veranstaltungsmetadaten, Zeitstempel, Zustand und gegebenenfalls Remote-ID
-und -URL. Tokens werden darin nicht gespeichert. Bestehende `published_events`
+Veranstaltungsmetadaten einschließlich `date_slug`, Zeitstempel, Zustand und
+gegebenenfalls Remote-ID und -URL. `target_ref` enthält die numerische Facebook-Page-ID,
+Instagram-User-ID oder die Mastodon-Instanzadresse ohne Zugangsdaten. `content_sha256`
+ist ein deterministischer SHA-256 über Plattform, Event-/Termin-UUID, Slug und den
+exakten bereits erzeugten Nachrichtentext. Der vollständige Text wird nicht gespeichert.
+Tokens, Header und rohe API-Fehlerantworten gehören nicht ins Journal. Bestehende
+Journal-Dateien erhalten die zusätzlichen Spalten automatisch; ältere Versuche
+behalten unbekannte Werte, ohne erfundene Phasen oder Hashes. Bestehende `published_events`
 bleiben erhalten; die Tabellen und der Index werden automatisch ergänzt.
 
 Nach deiner Veröffentlichungsbestätigung wird der Termin atomar reserviert:
@@ -389,11 +403,22 @@ mit `BEGIN IMMEDIATE` und fünf Sekunden `busy_timeout` schützen auch zwischen
 getrennten Prozessen. Andere Termine und Plattformen bleiben unabhängig. Das
 bestehende SQLite-Journalformat wird beibehalten; WAL wird nicht erzwungen.
 
-Ein Fehler vor dem Remote-Aufruf oder eine eindeutige API-Ablehnung kann den Versuch
-als `failed` freigeben. Bei unklarem Ausgang nach einem POST bleibt `publishing`
-gesperrt. Sobald eine Post-ID zurückkommt, wird sie als `remote_succeeded` gespeichert,
+Vor jedem POST wird außerdem `mutation_stage` dauerhaft gesetzt:
+`facebook_photo`, `facebook_feed`, `mastodon_media`, `mastodon_status`,
+`instagram_container` oder `instagram_publish`. Die letzte Phase bleibt bei unklarem
+Ergebnis sichtbar; die Fehlerklasse wird ohne rohe Fehlermeldung gespeichert.
+
+Ein Fehler vor dem Remote-Aufruf oder eine eindeutige Ablehnung des POSTs kann den Versuch
+als `failed` freigeben. Bei 408, unklarem Verbindungsabbruch oder 5xx bleibt
+`publishing` gesperrt. Ein Fehler beim nachfolgenden Polling-GET bestätigt ebenfalls
+nicht das Ergebnis des vorherigen POSTs und gibt den Versuch nicht frei. Sobald eine
+Post-ID zurückkommt, wird sie als `remote_succeeded` gespeichert,
 bevor `published_events` aktualisiert wird. Scheitert dieser zweite Schritt, ist die
-ID aus dem Journal wiederherstellbar. Ist bereits die Speicherung der Remote-ID
+ID aus dem Journal wiederherstellbar. Die abschließende Aktualisierung von
+`published_events` und `published` erfolgt in einer gemeinsamen Transaktion. Auch
+ein `resolve`-Aufruf übernimmt alle lokalen Änderungen atomar oder rollt sie zurück;
+ein bereits zuvor gespeicherter Remote-Erfolg bleibt dabei erhalten. Ist bereits
+die Speicherung der Remote-ID
 unmöglich, bleibt die vorher gespeicherte Reservierung gesperrt; die Fehlermeldung
 nennt die zurückgegebene ID. Ein Prozessabsturz zwischen Remote-Erfolg und Speicherung
 kann ebenfalls einen unklaren Zustand hinterlassen. Das ist keine verteilte Transaktion.
@@ -404,8 +429,17 @@ Publisher-Prozess stoppen und den tatsächlichen Beitrag auf der Plattform prüf
 Anschließend das lokale Journal anzeigen:
 
 ```bash
-uv run kulturbytes-social attempts list --platform facebook
+uv run kulturbytes-social attempts list --platform facebook --active
+uv run kulturbytes-social attempts list --platform mastodon --state remote_succeeded
+uv run kulturbytes-social attempts list --platform instagram --date-uuid "$DATE_UUID"
+uv run kulturbytes-social attempts list --platform facebook --limit 50
 ```
+
+Die Liste zeigt standardmäßig die neuesten 50 Versuche zuerst; `--limit 0` zeigt alle.
+`--active` umfasst `reserved`, `publishing` und `remote_succeeded`; mit einem
+abgeschlossenen `--state` ist diese Option nicht kombinierbar. Filter und Limit
+werden direkt in SQLite angewendet. Die Anzeige benötigt keine Zugangsdaten,
+verändert keine Veröffentlichung und ruft kein Netzwerk auf.
 
 Setze `ATTEMPT_UUID` auf die angezeigte Versuch-ID. Für einen bereits im Journal
 bestätigten Remote-Erfolg repariert dieser Befehl ausschließlich die lokalen Daten:
@@ -415,7 +449,8 @@ uv run kulturbytes-social attempts resolve --platform facebook "$ATTEMPT_UUID" -
 ```
 
 Bei einem unklaren Versuch mit manuell gefundenem Beitrag zusätzlich
-`--remote-id "$REMOTE_POST_ID"` angeben (Mastodon optional `--remote-url`). Nur wenn
+`--remote-id "$REMOTE_POST_ID"` mit einer numerischen Post-ID angeben (Facebook
+auch `page_post`; Mastodon optional `--remote-url` ohne Zugangsdaten, Query oder Fragment). Nur wenn
 **sicher kein Beitrag entstanden ist**, darf eine Reservierung freigegeben werden:
 
 ```bash

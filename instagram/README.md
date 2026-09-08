@@ -275,15 +275,25 @@ bei der automatischen Ergänzung von `publisher_metadata`, `publication_attempts
 und dem eindeutigen Reservierungsindex erhalten.
 
 API-Antworten werden vor der Verwendung validiert; „heute“ meint `Europe/Berlin`.
-Bildabrufe verwenden die gemeinsame HTTPS-/DNS-/Redirect-Prüfung. Sichere GETs
-haben höchstens drei Versuche mit begrenzter Pause; veröffentlichende POSTs werden
-nie automatisch wiederholt. Die DNS-Prüfung ist keine Bindung der tatsächlichen
-Verbindung an eine bestimmte IP. Größenlimits bleiben in Issue #6 offen.
+Medien sind auf `https://api.kulturbytes.de:443` beschränkt. Der gemeinsame Transport
+verbindet direkt zur geprüften öffentlichen IP mit ursprünglichem Host-Header,
+TLS-SNI und aktivierter Zertifikatsprüfung. DNS-Rebinding und Umgebungs-Proxys können
+diese lokale Zielbindung nicht umgehen; Medien verwenden `trust_env=False`.
+Sichere GETs haben höchstens drei Versuche und respektieren die Client-Timeouts oder
+ausdrückliche Overrides. POSTs werden nie automatisch wiederholt. Größenlimits
+bleiben in Issue #6 offen; Metas eigener Bildabruf wird nicht durch unseren Transport gesteuert.
 
 Jeder bestätigte Publish-Versuch reserviert den Termin vor dem Remote-Aufruf.
 Remote-Erfolg wird vor der abschließenden lokalen Speicherung journalisiert.
+Vor jedem POST steht die genaue `mutation_stage` im Journal. Termin-Slug,
+`target_ref` und ein `content_sha256` des tatsächlich verwendeten Textes helfen bei
+der Zuordnung. Tokens und vollständige Nachrichtentexte werden nicht gespeichert.
+Die neuen Spalten werden ohne Datenverlust ergänzt; bestehende Versuche behalten
+unbekannte Kontextwerte. Abschließende lokale Speicherung und Wiederherstellung
+haben jeweils einen gemeinsamen Transaktionsrahmen.
 Unklare oder teilweise abgeschlossene Versuche blockieren auch `--include-published`
 bis zur manuellen Auflösung. Dry-Runs und abgelehnte Bestätigungen reservieren nichts.
 Die [Projektanleitung](../README.md#veröffentlichungsjournal-und-wiederherstellung)
-beschreibt `kulturbytes-social attempts list` und `attempts resolve`, einschließlich
+beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
+`--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
 der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.

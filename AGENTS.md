@@ -479,17 +479,25 @@ All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed re
   Keep the list-summary/detail-description precedence.
 - `timezone.application_today()` is the only business-day clock and uses Europe/Berlin.
 - All media downloads and Instagram's JPEG check use `media_security.media_response`.
-  Allow HTTPS only, reject credentials/non-global literals and reject a host if any
-  resolved address is unsafe. Validate immediately before every attempt and each of
-  at most five explicit redirects; never blindly follow media redirects. No real DNS in tests.
-- This DNS preflight is not transport IP pinning. DNS rebinding between validation
-  and connection, proxy-side resolution and Instagram's later server-side fetch are
-  residual limits. Do not claim complete protection against these cases. No custom
-  sockets or download-size limits are introduced here; issue #6 remains open.
+  The allowlist contains only `api.kulturbytes.de`, HTTPS port 443, based on existing
+  repository media examples. No arbitrary hosts/IP URLs or speculative CDN entries.
+  Reject credentials and any DNS answer that is non-global/reserved. Resolve once
+  per attempt and give `PublicMediaTransport` the validated numeric TCP destination;
+  HTTPcore's `sni_hostname` extension and original Host header preserve certificate
+  hostname validation. TLS verification remains on. Never fall back to hostname DNS.
+- A separate media client/HTTPTransport uses `trust_env=False`, no proxy, no API auth
+  or cookies. Every retry/redirect repeats the policy (max five redirects). The single
+  allowed origin prevents IP-keyed TLS pool reuse across different server names;
+  revisit pool isolation before extending the host allowlist. No custom socket code.
+  Tests exercise the real HTTPX/HTTPcore stack with a fake TCP/TLS backend and a
+  rebinding resolver; no real DNS/network. Meta's later Instagram fetch is outside
+  the local transport. Do not claim control over it. Issue #6 size limits stay open.
 - `http.safe_get` reuses the caller's client, disables automatic redirects, and tries
   at most three times on 429/502/503/504 or ConnectTimeout/ReadTimeout/ConnectError.
   Backoff is 0.5/1 seconds; Retry-After integer/HTTP-date is clamped to 0–5 seconds.
-  Default network-phase timeout is five seconds, not a total DNS/download deadline.
+  Inherit the client timeout unless an explicit request override is supplied,
+  including explicit None. No hidden global five-second timeout; attempt count and
+  delays remain bounded independently from configured network-phase timeouts.
   Streaming retries cover request/header acquisition; failures while consuming a body
   fail closed without resume. Keep existing application polling intervals separate.
 - No publishing POST retries, including image uploads and Instagram containers.
@@ -501,21 +509,31 @@ All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed re
 `publications.py` owns one shared state mechanism for all publishers. Initialize
 `publication_attempts` alongside the platform's existing `published_events`, without
 removing legacy rows. Journal fields include attempt UUID, platform, date/event UUID,
-state, remote ID/URL, error class, timestamps and a minimal metadata snapshot for recovery.
-Never store credentials or the social body in this snapshot.
+state, remote ID/URL, error class, timestamps, date_slug and a metadata snapshot.
+`target_ref` is a bounded numeric Facebook Page/Instagram User ID or a normalized
+credential-free Mastodon origin. `content_sha256` hashes canonical UTF-8 JSON
+(sorted keys, compact separators) containing lowercase platform, event/date UUIDs,
+date_slug and the exact final message. Pass already-built text/caption; never rebuild
+it differently for hashing. Never persist credentials or the social body. Add the
+new nullable columns non-destructively; old rows retain NULL for unknown context.
 
 After per-event confirmation, `execute_publication` atomically reserves the date.
 `reserve_attempt` uses `BEGIN IMMEDIATE`, rechecks completed deduplication unless an
 explicit repeat was confirmed, and a partial unique index on `(platform, date_uuid)`
 for states `reserved`, `publishing`, `remote_succeeded`. `begin_remote_mutation` commits
-`publishing` before each actual content-creation POST. Transactions do not span remote
+`publishing` plus the concrete `mutation_stage` before each content-creation POST:
+`facebook_photo`, `facebook_feed`, `mastodon_media`, `mastodon_status`,
+`instagram_container`, `instagram_publish`. Keep the latest stage on uncertainty.
+Transactions do not span remote
 requests. `busy_timeout=5000` and foreign keys are enabled; existing journal mode is
 retained instead of forcing WAL.
 
 State flow: `reserved → publishing → remote_succeeded → published`. Record returned
 post IDs immediately before finalizing the legacy publication row. A failure before
-remote mutation or a definitive rejection may become `failed`; a transport error or
-uncertain remote outcome stays active. Never downgrade confirmed remote success.
+remote mutation or a definitive POST rejection may become `failed`; 408, transport
+errors and 5xx remain active, with the error class but no raw response persisted.
+A failing polling GET cannot classify the preceding POST as a definitive rejection.
+Never downgrade confirmed remote success.
 If finalization fails, retain `remote_succeeded`; if saving even the returned ID fails,
 the prior durable reservation remains active and the error reports the ID. A crash
 between remote success and its local persistence is still ambiguous; no distributed
@@ -526,12 +544,23 @@ There is no automatic expiration. Dry runs and declined confirmations create no 
 Completed explicit repeats create a new attempt UUID and update the latest legacy row.
 Different platform databases and different dates can proceed independently.
 
-The root CLI provides `attempts list --platform PLATFORM` and
+Transactions have explicit owners: `_transition` only updates SQL; public standalone
+state services own their transactions. Publication finalization and `resolve_attempt`
+each own one transaction for legacy-row and final-state updates. Their callbacks
+must call platform `remember_post(..., commit=False)`; standalone legacy writes keep
+commit=True compatibility. Resolve must not call a service that commits internally.
+A failed recovery rolls back all changes in that operation, preserving any remote
+success committed before it. Never overwrite a confirmed ID/URL during recovery.
+
+The root CLI provides `attempts list --platform PLATFORM` with SQL filters `--state`,
+`--active`, `--date-uuid`, `--limit` (default 50, zero means all, newest first;
+inactive states conflict with --active), and
 `attempts resolve --platform PLATFORM ATTEMPT_UUID --outcome published|failed`.
 Recovery is local, requires no token and never calls a platform API. The operator must
 stop the worker and inspect the platform first, then explicitly confirm the result.
 Use the stored remote ID for `remote_succeeded`; otherwise `published` requires
-`--remote-id` (optional Mastodon `--remote-url`). `failed` may release only a reserved
+`--remote-id` with numeric platform ID syntax (optional Mastodon `--remote-url`
+without credentials/query/fragment). `failed` may release only a reserved
 or publishing attempt with confirmed absence of a remote post. Never automatically
 clear reservations or delete remote posts. See README for operational examples.
 
@@ -1143,7 +1172,7 @@ uv run --all-packages python -m unittest discover -s tests -v
 
 They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, filtering/sorting/limits, and confirmed repeat publications (updated IDs, metadata, timestamps, and unchanged records on remote failure). Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
 
-Tests in `test_api_models.py`, `test_media_security.py`, `test_http_retry.py`, `test_timezone.py`, `test_database_paths.py`, `test_publication_journal.py` and `test_concurrency.py` cover boundary validation, SSRF/redirects, retries, Berlin dates, schema ownership, actual mocked POSTs, SQLite finalization failure/recovery and separate-connection reservations. Mock DNS and sleep; use fresh databases for uncertain-failure subcases so reservations do not hide later cases. Do not use live social publishing in automated tests. Full Markdown support, download sizes and reliable Mastodon media processing remain gaps.
+Tests in `test_api_models.py`, `test_media_security.py`, `test_http_retry.py`, `test_timezone.py`, `test_database_paths.py`, `test_publication_journal.py`, `test_attempts_cli.py` and `test_concurrency.py` cover boundary validation, SSRF/redirects, retries, Berlin dates, schema ownership, actual mocked POSTs, SQLite finalization failure/recovery and separate-connection reservations. Mock DNS and sleep; use fresh databases for uncertain-failure subcases so reservations do not hide later cases. Do not use live social publishing in automated tests. Full Markdown support, download sizes and reliable Mastodon media processing remain gaps.
 
 ---
 

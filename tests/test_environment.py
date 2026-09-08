@@ -117,10 +117,10 @@ class EnvironmentTests(IsolatedEnvironmentTestCase):
                 environment.set_dotenv_value('META_SYSTEM_USER_ACCESS_TOKEN', 'new')
             self.assertTrue(path.is_symlink())
 
-    def test_mastodon_keeps_environment_and_keyring_semantics(self):
-        environment.get_env_file_path().write_text('MASTODON_ACCESS_TOKEN=ignored\n')
+    def test_mastodon_uses_shared_dotenv_precedence(self):
+        environment.get_env_file_path().write_text('MASTODON_ACCESS_TOKEN=dotenv-token\n')
         with patch.dict(os.environ, {'MASTODON_ACCESS_TOKEN': TOKEN}):
-            self.assertEqual(credentials.resolve_credential(credentials.MASTODON), TOKEN)
+            self.assertEqual(credentials.resolve_credential(credentials.MASTODON), 'dotenv-token')
 
 
 class BootstrapTests(IsolatedEnvironmentTestCase):

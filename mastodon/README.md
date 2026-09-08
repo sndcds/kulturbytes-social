@@ -32,7 +32,10 @@ Alle weiteren Startbefehle auf dieser Seite führst du im Repository-Hauptordner
 
 ## Konfiguration
 
-Die Einstellungen werden aus den Umgebungsvariablen gelesen:
+Token und Instanzadresse verwenden dieselben zentralen Resolver wie die anderen
+Publisher: **`.env > Prozess-Environment > OS-Keyring`** für den Token und
+**`.env > Prozess-Environment > Standard`** für `MASTODON_BASE_URL`.
+`DATABASE_PATH` bleibt eine Environment-Einstellung.
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
@@ -44,22 +47,36 @@ Zugangsdaten werden erst für `--publish` und `--check-auth` geladen.
 `--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
 Die Vorschau lädt Veranstaltungsdaten aus der Kulturbytes-API.
 
-Setze die Zugangsdaten vor dem Zugangstest oder einer Veröffentlichung:
+Trage die Zugangsdaten in die lokale `.env` ein:
 
-```bash
-export MASTODON_BASE_URL="https://norden.social"
-export MASTODON_ACCESS_TOKEN="DEIN_ACCESS_TOKEN"
+```dotenv
+MASTODON_BASE_URL=https://norden.social
+MASTODON_ACCESS_TOKEN=DEIN_ACCESS_TOKEN
 ```
 
-Die `export`-Befehle gelten für die aktuelle Terminal-Sitzung. Eine `.env`-Datei
-wird vom Programm nicht automatisch geladen. Bewahre echte Tokens außerhalb
-der versionierten Dateien auf; `.env` und lokale Datenbanken sind bereits in
-[`.gitignore`](../.gitignore) ausgeschlossen.
+Ein separates `export MASTODON_ACCESS_TOKEN=...` ist nicht erforderlich, wenn der
+Token in `.env` vorhanden ist. Im Checkout wird immer `<repo>/.env` verwendet,
+unabhängig vom Arbeitsverzeichnis. Installiert außerhalb eines Checkouts gilt
+`$XDG_CONFIG_HOME/kulturbytes-social/.env` oder `~/.config/kulturbytes-social/.env`.
+Relative XDG-Pfade werden ignoriert. Die Datei kann zugleich die Meta-Konfiguration
+für Facebook und Instagram enthalten. **Never commit .env.** Verwende unter POSIX
+`0600`-Rechte; `.env` ist in [`.gitignore`](../.gitignore) ausgeschlossen.
+
+Leere oder nur aus Leerzeichen bestehende `.env`-Tokenwerte erlauben Fallback zur
+Prozessumgebung. Eine explizit leere Prozess-Tokenvariable unterdrückt den Keyring.
+Für die Instanzadresse überschreibt auch ein leerer `.env`-Wert die Umgebung und
+führt zum bestehenden Validierungsfehler. Fehlt die Adresse überall, gilt `https://norden.social`.
+
+Mastodon übernimmt keine Tokens automatisch in `.env` und startet keine interaktive
+Auth-Einrichtung. Fehlende Zugangsdaten führen zum Fehler. `--check-auth` bleibt
+lesend; Dry Runs benötigen weder Token noch Keyring und lesen die Instanzadresse
+für die öffentliche Limit-Abfrage. Beim Veröffentlichen wird dieselbe einmal geladene
+Konfiguration für Instanzlimit, Medienupload, Medienprüfung und Status verwendet.
 
 ## Optionaler OS-Keyring
 
-Tokens werden zuerst aus der jeweiligen Umgebungsvariable, sonst aus dem
-OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
+Tokens werden zuerst aus `.env`, dann aus der Prozessumgebung und schließlich aus
+dem OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
 den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
 `--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
 
@@ -72,14 +89,15 @@ uv run kulturbytes-social mastodon --credentials delete
 ```
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
-vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgegeben.
-Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht die Umgebung.
+vorhanden/nicht vorhanden und die Quelle (`.env`, `Environment` oder `OS-Keyring`);
+weder Werte, Teile, Längen noch Hashes werden ausgegeben.
+Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder die Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
 
 Service: `kulturbytes-social/mastodon`, Benutzername: `access-token`.
-Instanz-/Kontokonfiguration wird weiterhin über Umgebungsvariablen gesetzt.
+`MASTODON_BASE_URL` wird ebenfalls zentral aus `.env` vor der Umgebung gelesen.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
@@ -224,7 +242,7 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 | Problem | Was du prüfen kannst |
 |---|---|
 | `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
-| Eine Zugangsdaten-Variable fehlt | Setze die erforderlichen Variablen unter „Konfiguration“ im selben Terminal. |
+| Eine Zugangsdaten-Variable fehlt | Prüfe `.env`, Prozessumgebung und Keyring gemäß „Konfiguration“. |
 | Es stehen keine Termine zur Auswahl | Prüfe den Stadtfilter. Bereits veröffentlichte Termine siehst du mit `--include-published`; vergangene oder nicht freigegebene Termine werden ausgefiltert. |
 | Mastodon lehnt die Veröffentlichung ab | Prüfe die ausgegebene API-Antwort und ob der Access Token zur eingestellten Instanz gehört und Beiträge veröffentlichen darf. |
 | Der Bild-Upload schlägt fehl | Prüfe die Bildadresse aus der Vorschau und ob der Token Medien hochladen darf. |

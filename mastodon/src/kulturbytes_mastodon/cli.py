@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import re
 import sqlite3
 import time
@@ -14,6 +13,7 @@ import httpx
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
 from kulturbytes_common.database import get_database_path
+from kulturbytes_common.environment import get_config
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -29,7 +29,7 @@ class MastodonConfig:
 
 
 def load_base_url() -> str:
-    base_url = os.getenv("MASTODON_BASE_URL", "https://norden.social").strip().rstrip("/")
+    base_url = get_config("MASTODON_BASE_URL", "https://norden.social").strip().rstrip("/")
     try:
         parsed = urlsplit(base_url)
         valid = (parsed.scheme in {"http", "https"} and parsed.hostname
@@ -267,8 +267,9 @@ def print_event_preview(
 def wait_for_media(
     client: httpx.Client,
     media_id: str,
+    *, config: MastodonConfig | None = None,
 ) -> None:
-    config = load_config()
+    config = config or load_config()
     url = (
         f"{config.base_url}"
         f"/api/v1/media/{media_id}"
@@ -305,8 +306,9 @@ def wait_for_media(
 def upload_mastodon_media(
     client: httpx.Client,
     event: dict,
+    *, config: MastodonConfig | None = None,
 ) -> str:
-    config = load_config()
+    config = config or load_config()
     (
         image_bytes,
         content_type,
@@ -362,15 +364,16 @@ def publish_mastodon_status(
     event: dict,
     *,
     message: str | None = None,
+    config: MastodonConfig | None = None,
 ) -> tuple[str, str | None]:
-    config = load_config()
+    config = config or load_config()
     if message is None:
         message = build_mastodon_message(event)
     media_id = None
 
     if get_image_url(event):
-        media_id = upload_mastodon_media(client, event)
-        wait_for_media(client, media_id)
+        media_id = upload_mastodon_media(client, event, config=config)
+        wait_for_media(client, media_id, config=config)
 
     data = {
         "status": message,
@@ -407,6 +410,7 @@ def publish_event(
     dry_run: bool,
     *,
     max_length: int = DEFAULT_STATUS_LIMIT,
+    config: MastodonConfig | None = None,
 ) -> bool:
     message = build_mastodon_message(event, max_length=max_length)
     print_event_preview(event, message, max_length)
@@ -436,6 +440,7 @@ def publish_event(
         client,
         event,
         message=message,
+        config=config,
     )
 
     click.secho(
@@ -531,9 +536,8 @@ def mastodon_command(
     if check_auth_only:
         check_auth(load_config())
         return
-    if not dry_run:
-        load_config()
-    base_url = load_base_url()
+    config = load_config() if not dry_run else None
+    base_url = config.base_url if config else load_base_url()
     status_limit: int | None = None
 
     def publish_with_instance_limit(
@@ -542,7 +546,7 @@ def mastodon_command(
         nonlocal status_limit
         if status_limit is None:
             status_limit = get_status_limit(client, base_url)
-        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit)
+        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config)
 
     run_publisher(
         conn=init_database(),

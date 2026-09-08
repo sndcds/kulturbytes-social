@@ -1,4 +1,4 @@
-"""Deterministic Meta configuration, without changing the process environment."""
+"""Deterministic shared configuration, without changing the process environment."""
 
 import io
 import os

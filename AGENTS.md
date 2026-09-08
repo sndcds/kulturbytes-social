@@ -247,7 +247,7 @@ or filtered targets and direct publication failures return a nonzero exit code.
 Dry run should be the safe default for interactive commands.
 
 There is exactly one primary public CLI: `kulturbytes-social`. Run `uv run kulturbytes-social PLATFORM ...` from the repository root, or the installed command from any directory. Platform packages expose reusable named Click command objects; they have no public scripts or main.py wrappers. New publishers must be subcommands (for example `kulturbytes-social bluesky`), never separate executables.
-All three publishers load social credentials lazily through `load_config()` and frozen configuration dataclasses whose token fields use `repr=False`. Imports, dry run, and `--help` work without credentials. `--publish` validates required credentials before event discovery or database initialization. Meta authentication/configuration reads the deterministic `.env` first.
+All three publishers load social credentials lazily through `load_config()` and frozen configuration dataclasses whose token fields use `repr=False`. Imports, dry run, and `--help` work without credentials. `--publish` validates required credentials before event discovery or database initialization. Authentication/configuration reads the deterministic `.env` first for every platform.
 
 CLI style:
 
@@ -291,6 +291,19 @@ For example, success displays `✓ Facebook Token gültig`; an expired Meta toke
 - Use Bearer headers, no redirects or retries, and shared redaction from `kulturbytes_common.auth`. Never display tokens, including API-echoed values and encoded forms. Transport failures must not print raw exception text.
 - This read-only check validates account access, not all publishing permissions. Do not add token refresh or OAuth flows; validated primary Meta credentials are persisted centrally to `.env`; keyring management remains explicit. Facebook may prompt for recovery only in a TTY.
 
+## No platform-specific credential precedence
+
+Platform packages must not implement special-case credential precedence. All credentials
+use `resolve_credential_source`; Mastodon is not an exception. Non-secret settings with
+.env support use shared `get_config`, never direct `os.getenv` in platform code.
+`MASTODON_ACCESS_TOKEN` follows .env > environment > keyring with identical empty-value
+semantics. `MASTODON_BASE_URL` follows .env > environment > `https://norden.social`,
+retaining existing strict origin validation and trailing slash normalization.
+Mastodon does not bootstrap or persist credentials automatically. Dry runs only read
+non-secret instance configuration and never request credentials or touch keyring.
+Mastodon publishing resolves one config for the invocation and passes it through media
+upload, polling and status publication. Instance-limit discovery uses that same base URL.
+
 ## Central authentication configuration and local `.env`
 
 Authentication configuration is resolved centrally in `kulturbytes_common.environment`
@@ -304,7 +317,8 @@ Installed packages: absolute `$XDG_CONFIG_HOME/kulturbytes-social/.env`, otherwi
 `~/.config/kulturbytes-social/.env`. Relative XDG values are ignored. No whole-process
 `load_dotenv` mutation: use explicit lookup. python-dotenv parses literal values without
 interpolation. Meta IDs, login mode and Graph versions also read .env before environment.
-Mastodon and database-path configuration are unchanged.
+Mastodon uses the same shared credential resolver and `get_config` for its base URL.
+Database-path configuration is unchanged.
 
 Non-empty `.env` credentials win over environment and keyring. Empty `.env` credentials
 permit fallback; explicit empty environment credentials still suppress their keyring
@@ -339,7 +353,8 @@ Click management options. Python `keyring` is a dependency of `kulturbytes-commo
 added through `uv add --package kulturbytes-common keyring`; keep the root lockfile synced.
 Never call `secret-tool` from application code or implement custom encryption.
 
-Meta resolution is .env > environment > OS keyring > hidden TTY bootstrap. Mastodon remains environment > OS keyring. Even an explicitly empty environment
+All credentials resolve .env > environment > OS keyring. Meta additionally supports
+hidden TTY bootstrap; Mastodon retains its missing-credential error. Even an explicitly empty environment
 variable suppresses keyring access; whitespace-only values count as missing. Generic
 lookup never prompts. Help/imports/dry runs must not touch the keyring. Config loaders
 and auth checks use the same resolver.
@@ -393,7 +408,7 @@ backends. Backend exceptions are converted to concise Click errors without raw d
 Never display token values, fragments, lengths, or hashes. Persist validated primary
 Meta tokens only through the central atomic `.env` writer. Never put tokens in SQLite,
 logs or shell startup files; temporary writer files must be restrictive and cleaned up. Non-secret IDs, API versions,
-Meta login types and IDs also follow .env > environment; Mastodon instance config remains in environment. Meta shares one service across Facebook/Instagram; Mastodon is separate. Changing
+Meta login types and IDs also follow .env > environment; Mastodon instance config also follows .env > environment > default. Meta shares one service across Facebook/Instagram; Mastodon is separate. Changing
 accounts requires matching asset access.
 
 Ubuntu optional packages: `sudo apt install gnome-keyring libsecret-tools`. Use an
@@ -994,7 +1009,7 @@ MASTODON_ACCESS_TOKEN=
 DATABASE_PATH=mastodon_posts.sqlite3
 ```
 
-Do not include real secrets in `.env.example`. Meta reads these settings from the deterministic `.env`; Mastodon still requires environment configuration.
+Do not include real secrets in `.env.example`. All publishers read authentication settings from the deterministic `.env` before process environment.
 
 ---
 

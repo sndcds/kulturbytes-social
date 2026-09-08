@@ -52,8 +52,8 @@ Der Standardmodus zeigt nur eine Vorschau.
 
 ## Konfiguration
 
-Facebook und Instagram lesen ihre Auth-Konfiguration primär aus der lokalen `.env`,
-danach aus Umgebungsvariablen und dem OS-Keyring. Mastodon behält Environment und Keyring. Die
+Alle Publisher lesen ihre Zugangsdaten primär aus der lokalen `.env`, danach aus
+Umgebungsvariablen und dem OS-Keyring. Mastodon nutzt denselben Resolver. Die
 plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 
 - [Facebook konfigurieren](facebook/README.md#konfiguration)
@@ -61,7 +61,7 @@ plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 - [Instagram konfigurieren](instagram/README.md#zugangsdaten-und-veröffentlichung)
 
 Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-auth`.
-Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. Meta-Zugangsdaten und Konto-IDs werden zentral aus der deterministischen `.env` gelesen.
+Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. Zugangsdaten, Meta-Konto-IDs und Mastodon-Instanzadresse werden zentral aus der deterministischen `.env` gelesen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
 
 ## Gemeinsamer Meta-Zugang
@@ -108,6 +108,8 @@ FACEBOOK_PAGE_ID=
 INSTAGRAM_USER_ID=
 FACEBOOK_GRAPH_API_VERSION=v26.0
 INSTAGRAM_LOGIN_TYPE=facebook
+MASTODON_BASE_URL=https://norden.social
+MASTODON_ACCESS_TOKEN=
 ```
 
 Trage die tatsächlichen Konto-IDs ein. Ist noch kein primärer Token vorhanden,
@@ -138,7 +140,11 @@ benötigt der Prozess Schreibzugriff auf den deterministischen Konfigurationspfa
 Ohne TTY gibt es keine Token-Rückfrage. Hilfe und Dry Runs starten keinen Bootstrap.
 Nur der primäre Meta-Token wird automatisch persistiert; abgeleitete Facebook-Page-Tokens
 bleiben im Speicher. Legacy-Tokens werden niemals zum System-User-Token umbenannt.
-Mastodon- und Datenbankkonfiguration bleiben unverändert.
+Auch `MASTODON_ACCESS_TOKEN` folgt `.env > Environment > Keyring`;
+`MASTODON_BASE_URL` folgt `.env > Environment > https://norden.social`. Ein separates
+`export MASTODON_ACCESS_TOKEN=...` ist bei einem Token in `.env` nicht erforderlich.
+Mastodon startet keine Auth-Einrichtung und persistiert Fallback-Tokens nicht automatisch.
+Die Datenbankkonfiguration bleibt unverändert.
 
 ## Tokens optional im OS-Keyring speichern
 
@@ -160,8 +166,8 @@ explizit. Tokenwerte können nicht als CLI-Argument übergeben werden.
 | Facebook und Instagram | `META_SYSTEM_USER_ACCESS_TOKEN` | `kulturbytes-social/meta` | `system-user-access-token` |
 | Mastodon | `MASTODON_ACCESS_TOKEN` | `kulturbytes-social/mastodon` | `access-token` |
 
-Für Meta gilt `.env > Environment > Keyring`. Status zeigt zusätzlich die Quelle
-(`.env`, `Environment` oder `OS-Keyring`). Mastodon behält Environment vor Keyring.
+Für alle Plattformen gilt `.env > Environment > Keyring`. Status zeigt zusätzlich die Quelle
+(`.env`, `Environment` oder `OS-Keyring`).
 Eine explizit leere Environment-Variable unterdrückt den zugehörigen Keyring-Lookup. Zum Verwenden des Keyrings
 die Variable mit `unset` entfernen. Hilfe und Dry Runs greifen nicht auf Tokens zu.
 Die Credential-Verwaltung lädt keine Events und öffnet keine Datenbank; sie darf

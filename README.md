@@ -1,542 +1,272 @@
-# Kulturbytes Publisher
+# Kulturbytes Social
 
-Teile Kulturbytes-Veranstaltungen auf Facebook, Mastodon und Instagram. Du wählst die
-gewünschten Termine im Terminal aus, siehst eine Vorschau und bestätigst jeden
-Beitrag vor der Veröffentlichung. So behältst du die Kontrolle darüber, was
-auf deiner Seite oder deinem Konto erscheint.
+Kulturbytes-Termine auf Facebook Pages, Instagram und Mastodon veröffentlichen.
+Kulturbytes bleibt die Quelle für Eventdaten. Das FastAPI-Backend übernimmt Auswahlregeln,
+Vorschau, Veröffentlichung und Journal; die Click-CLI ist ein HTTP-Client.
+**PostgreSQL ist die einzige persistente Datenbank.**
 
-Wähle die Anleitung für deine Plattform:
+## Installation und Start
 
-| Plattform | Wofür du sie verwendest |
-|---|---|
-| [Facebook](facebook/README.md) | Veranstaltungsbeiträge auf einer Facebook-Seite veröffentlichen |
-| [Mastodon](mastodon/README.md) | Veranstaltungsbeiträge auf einem Mastodon-Konto veröffentlichen |
-| [Instagram](instagram/README.md) | Veranstaltungsbilder auf einem Instagram-Professional-Konto veröffentlichen |
-
-## Voraussetzungen
-
-Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
-Für Veröffentlichungen und den Zugangstest benötigst du außerdem die in der
-jeweiligen Anleitung beschriebenen Zugangsdaten. Vorschau und Hilfe funktionieren ohne Tokens. Behalte den gesamten Repository-Ordner, da alle
-Publisher das Paket in `common/` verwenden.
-
-## Schnellstart
-
-Es gibt genau einen öffentlichen CLI-Befehl: `kulturbytes-social`.
-Die Plattformen werden als Click-Unterbefehle registriert:
-
-```bash
-uv run kulturbytes-social --help
-uv run kulturbytes-social facebook --help
-uv run kulturbytes-social mastodon --help
-uv run kulturbytes-social instagram --help
-```
-
-
-Öffne ein Terminal im Repository-Hauptordner und installiere die Abhängigkeiten:
+Voraussetzungen: Python ≥ 3.12, `uv`, ein erreichbarer PostgreSQL-Server und eine eigene
+Datenbank mit einer Rolle, die Tabellen und Indizes anlegen darf. PostgreSQL kann lokal
+oder auf einem Server laufen; Docker ist nicht erforderlich.
 
 ```bash
 uv sync --all-packages
+createdb kulturbytes_social
+cp .env.example .env
+chmod 600 .env
 ```
 
-Öffne danach die [Facebook-Anleitung](facebook/README.md#schnellstart),
-[Mastodon-Anleitung](mastodon/README.md#schnellstart) oder
-[Instagram-Anleitung](instagram/README.md#schnellstart). Dort findest du die
-Befehle zum Setzen deiner Zugangsdaten und für deine erste Vorschau.
-Die Installation ist für alle Plattformen gemeinsam und muss nur einmal
-ausgeführt werden.
-
-Bei der ersten Auswahl gibst du beispielsweise `1` oder `1,3-5` ein.
-`all` wählt alle angezeigten Termine; eine leere Eingabe beendet die Auswahl.
-Der Standardmodus zeigt nur eine Vorschau.
-
-## Konfiguration
-
-Alle Publisher lesen ihre Zugangsdaten primär aus der lokalen `.env`, danach aus
-Umgebungsvariablen und dem OS-Keyring. Mastodon nutzt denselben Resolver. Die
-plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
-
-- [Facebook konfigurieren](facebook/README.md#konfiguration)
-- [Mastodon konfigurieren](mastodon/README.md#konfiguration)
-- [Instagram konfigurieren](instagram/README.md#zugangsdaten-und-veröffentlichung)
-
-Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-auth`.
-Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. Zugangsdaten, Meta-Konto-IDs und Mastodon-Instanzadresse werden zentral aus der deterministischen `.env` gelesen.
-Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
-
-## Gemeinsamer Meta-Zugang
-
-```text
-META_SYSTEM_USER_ACCESS_TOKEN ─┬─ Facebook  (FACEBOOK_PAGE_ID)
-                              └─ Instagram (INSTAGRAM_USER_ID)
-MASTODON_ACCESS_TOKEN ─────────── Mastodon
-```
-
-Für Facebook und Instagram verwaltest du einen Meta System User Access Token.
-Der System User muss in deinem Meta Business Portfolio bereits Zugriff auf die
-Facebook-Seite, das verknüpfte Instagram-Professional-Konto und die verwendete App
-haben. Die erforderlichen Veröffentlichungsrechte müssen dem Token gewährt sein.
-IDs bleiben separate, nicht geheime Konfiguration in `.env` oder Environment. Der Publisher
-richtet keine System User oder Assets ein und implementiert keinen Browser-OAuth-Login.
-
-Facebook ermittelt intern den Page Token der exakten Seiten-ID, validiert ihn und
-verwendet ihn ausschließlich im Speicher des aktuellen Aufrufs. Instagram verwendet
-den gemeinsamen Token direkt über die API mit Facebook Login (`graph.facebook.com`).
-Bei gemeinsamem Token ist dies der Standard; ein explizites
-`INSTAGRAM_LOGIN_TYPE=instagram` wird mit einer Migrationsmeldung abgewiesen.
-Beide Publisher validieren ihr Ziel vor Events, Bildern, Datenbankzugriffen und
-Veröffentlichung. `--check-auth` erstellt keine Inhalte. Ein erfolgreicher Lesetest
-beweist nicht sämtliche Veröffentlichungsrechte.
-
-## Lokale `.env` als primäre Meta-Konfiguration
-
-```text
-.env > Prozess-Environment > OS-Keyring > verdeckte TTY-Eingabe
-```
-
-Im Source-Checkout liegt die Datei immer im Repository-Hauptordner: `<repo>/.env`.
-Der Pfad hängt vom installierten `common`-Paket ab, niemals vom Arbeitsverzeichnis.
-Ein Aufruf aus `/tmp` verwendet also dieselbe Datei. Bei einer Installation ohne
-Checkout gilt `$XDG_CONFIG_HOME/kulturbytes-social/.env`, andernfalls
-`~/.config/kulturbytes-social/.env`; ein relativer XDG-Pfad wird ignoriert.
-
-Beispiel (leere Platzhalter auch in [`.env.example`](.env.example)):
+In `.env` die Verbindung und einen starken, selbst generierten Service-Token setzen:
 
 ```dotenv
-META_SYSTEM_USER_ACCESS_TOKEN=
-FACEBOOK_PAGE_ID=
-INSTAGRAM_USER_ID=
-FACEBOOK_GRAPH_API_VERSION=v26.0
-INSTAGRAM_LOGIN_TYPE=facebook
-MASTODON_BASE_URL=https://norden.social
-MASTODON_ACCESS_TOKEN=
+DATABASE_URL=postgresql+psycopg://localhost/kulturbytes_social
+KULTURBYTES_SOCIAL_API_URL=http://127.0.0.1:8000
+KULTURBYTES_SOCIAL_API_TOKEN=
 ```
 
-Trage die tatsächlichen Konto-IDs ein. Ist noch kein primärer Token vorhanden,
-fragen `facebook --check-auth` und `instagram --check-auth` im TTY verdeckt nach
-`Meta System User Access Token`. Vorhandene Environment-/Keyring-Tokens werden zuerst
-verwendet. **Erst nach erfolgreicher Zielprüfung** wird der primäre Token automatisch
-in `.env` gespeichert. Das gilt auch für `--publish`. Der aktuelle Aufruf verwendet
-den validierten Wert weiter im Speicher. Fehler bei Validierung oder Speicherung
-verhindern Veröffentlichung und Veröffentlichungseinträge. Ungültige Tokens verändern
-die Datei nicht. Ein ungültiger vorhandener `.env`-Token führt zum Fehler, nicht zu
-stillem Fallback; entferne oder korrigiere den Eintrag vor einem erneuten Bootstrap.
+Das leere Token-Feld muss vor der Nutzung gefüllt werden. Für passwortgeschützte Verbindungen
+Benutzer und Passwort in `DATABASE_URL` konfigurieren; Sonderzeichen URL-kodieren.
+Die vollständige Verbindungs-URL niemals in Logs, Issues oder Screenshots übernehmen.
 
-Leere `.env`-Tokenwerte zählen als fehlend und erlauben Fallback. Eine explizit leere
-Prozess-Tokenvariable unterdrückt weiterhin den zugehörigen Keyring-Wert. Nicht geheime
-Meta-Einstellungen (IDs, Graph-Versionen, Instagram-Login) folgen `.env > Environment >
-Standard`, auch bei explizit leerem Wert. Werte werden wörtlich gelesen, ohne Shell-
-Ausführung oder `${...}`-Expansion; `os.environ` wird nicht verändert.
+```bash
+uv run alembic upgrade head
+uv run uvicorn kulturbytes_social.api.app:app --host 127.0.0.1 --port 8000
+```
 
-Schreibvorgänge erhalten fremde Variablen, Kommentare und Leerzeilen, ersetzen denselben
-Schlüssel ohne Duplikate und verwenden eine temporäre Datei im Zielverzeichnis mit
-atomarem Austausch und Aufräumen bei Fehlern. POSIX-Dateirechte sind `0600`; auch eine
-bereits vorhandene validierte Datei wird auf `0600` beschränkt. Symlinks und ungültige
-Dateien werden abgewiesen. **Never commit .env.** `.env` und temporäre `.env.*`-Dateien
-sind ignoriert; die Beispieldatei enthält keine Secrets.
+In einem zweiten Terminal:
 
-CI/systemd können Tokens weiter extern bereitstellen. Nach erfolgreicher Validierung
-benötigt der Prozess Schreibzugriff auf den deterministischen Konfigurationspfad.
-Ohne TTY gibt es keine Token-Rückfrage. Hilfe und Dry Runs starten keinen Bootstrap.
-Nur der primäre Meta-Token wird automatisch persistiert; abgeleitete Facebook-Page-Tokens
-bleiben im Speicher. Legacy-Tokens werden niemals zum System-User-Token umbenannt.
-Auch `MASTODON_ACCESS_TOKEN` folgt `.env > Environment > Keyring`;
-`MASTODON_BASE_URL` folgt `.env > Environment > https://norden.social`. Ein separates
-`export MASTODON_ACCESS_TOKEN=...` ist bei einem Token in `.env` nicht erforderlich.
-Mastodon startet keine Auth-Einrichtung und persistiert Fallback-Tokens nicht automatisch.
-Die Datenbankkonfiguration bleibt unverändert.
+```bash
+curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/api/v1/health
+uv run kulturbytes-social --help
+uv run kulturbytes-social mastodon
+```
 
-## Tokens optional im OS-Keyring speichern
+`/health` prüft nur den Prozess. `/api/v1/health` prüft die PostgreSQL-Tabellen und liefert
+bei fehlendem Schema oder Verbindungsproblemen HTTP 503. Es findet keine automatische
+Schemaerstellung statt. App-Import und CLI-Hilfe benötigen keine laufende Datenbank.
 
-Beide Meta-Unterbefehle verwalten standardmäßig **denselben** Eintrag:
+## Konfiguration und Betrieb
+
+Nichtleere Werte aus `.env` haben Vorrang vor Prozessvariablen. Für Plattform-Secrets
+folgt danach der OS-Keyring. Ein explizit leerer Prozesswert unterdrückt den Keyring-Lookup.
+Im Checkout liegt `.env` im Repository-Stamm, unabhängig vom Arbeitsverzeichnis;
+installiert außerhalb eines Checkouts unter `$XDG_CONFIG_HOME/kulturbytes-social/.env`
+oder `~/.config/kulturbytes-social/.env`.
+
+| Einstellung | Ort | Bedeutung |
+| --- | --- | --- |
+| `DATABASE_URL` | Backend/Alembic | Ausschließlich `postgresql+psycopg://…`; kein Ersatzspeicher |
+| `KULTURBYTES_SOCIAL_API_TOKEN` | Backend und CLI | Gemeinsamer Bearer-Service-Token |
+| `KULTURBYTES_SOCIAL_API_URL` | CLI | Backend-Adresse, Standard `http://127.0.0.1:8000` |
+| Plattform-Zugangsdaten | Backend | Siehe Plattform-READMEs |
+| `TEST_DATABASE_URL` | Tests | Separate PostgreSQL-Datenbank mit Namen auf `_test` |
+
+Die CLI benötigt für Laufzeitoperationen nur API-Adresse und API-Token. Der Server löst
+Plattform-Zugänge auf; API-Requests enthalten keine Social-Tokens. Authentifizierung im
+Server ist nicht interaktiv. Ein erfolgreich geprüfter Meta-Zugang aus Environment/Keyring
+kann serverseitig in `.env` gespeichert werden, entsprechend der bestehenden Zugangspolitik.
+
+Alle Geschäfts-Endpunkte unter `/api/v1` sind geschützt, einschließlich Vorschau und
+Journal-Lesezugriff. Die beiden Health-Endpunkte sind öffentlich. Die Prüfung verwendet
+`secrets.compare_digest`; ein fehlendes Server-Token verweigert den Zugriff.
+OpenAPI unter `/docs` beschreibt Bearer-Authentifizierung und Request-Modelle.
+Es gibt keine Benutzerkonten oder Rollen; der Service-Token gewährt administrative Rechte.
+
+Standardmäßig nur auf Loopback binden. Für Fernzugriff HTTPS über einen geeigneten
+Reverse-Proxy verwenden und Proxy-/Anwendungslogs ohne Tokens, Header und Request-Bodies
+betreiben. Mutierende Requests dürfen auch durch einen Proxy nicht automatisch wiederholt
+werden. Synchronous Publishing kann durch Instagram-Polling mehrere Minuten dauern;
+entsprechende Proxy-Timeouts setzen. Die CLI wartet bis zu 600 Sekunden auf eine Antwort.
+
+## CLI
+
+```bash
+uv run kulturbytes-social facebook
+uv run kulturbytes-social instagram --city Flensburg --limit 20
+uv run kulturbytes-social mastodon --publish
+uv run kulturbytes-social facebook --check-auth
+uv run kulturbytes-social instagram --event-uuid EVENT_UUID --date-identifier DATE_SLUG
+uv run kulturbytes-social mastodon --event-uuid EVENT_UUID --date-identifier DATE_UUID --publish
+```
+
+Ohne `--publish` wird nur eine Vorschau erstellt. Interaktiv funktionieren `2`, `1,4,7`,
+`3-6`, `1,3-5,9`, `all`, `alle` und `*`; eine leere Auswahl beendet den Lauf.
+`--city` vergleicht exakt und ohne Beachtung der Groß-/Kleinschreibung.
+`--limit` ist standardmäßig 50, maximal 1000; `0` zeigt alle Kandidaten.
+Direkte Auswahl löst UUID plus Termin-Slug oder Termin-UUID vor jeder Listenbegrenzung auf.
+
+Jede tatsächliche Veröffentlichung benötigt eine lokale Bestätigung. Bereits publizierte
+Termine erfordern `--include-published` und eine zusätzliche Bestätigung, auch in der
+Vorschau. Aktive oder ungeklärte Versuche bleiben unabhängig davon gesperrt. Die CLI sendet
+den Hash der bestätigten Vorschau; geänderter Text führt zum Konflikt statt Veröffentlichung.
+
+Fehler bei direkter Auswahl/Veröffentlichung liefern einen Fehler-Exitcode. Bei mehreren
+manuell ausgewählten Terminen werden die übrigen weiterbearbeitet, danach wird ein Fehler
+zurückgegeben, wenn mindestens einer scheiterte. Backend-Ausfall erlaubt keine lokale
+Veröffentlichung. Vor Wiederholung einer Anfrage mit unklarer Antwort das Journal prüfen.
+
+Lokale OS-Keyring-Verwaltung bleibt für Backend-Betreiber verfügbar:
 
 ```bash
 uv run kulturbytes-social facebook --credentials set
 uv run kulturbytes-social instagram --credentials status
-uv run kulturbytes-social facebook --credentials delete
+uv run kulturbytes-social mastodon --credentials delete
 ```
 
-`set` fragt den Token verdeckt ab. `status` zeigt nur vorhanden/nicht vorhanden;
-`delete` verlangt Bestätigung. Löschen wirkt für Facebook und Instagram gemeinsam,
-ändert aber keine Environment-Variable und keinen bereits übernommenen `.env`-Eintrag. `--credential meta` wählt diesen Eintrag
-explizit. Tokenwerte können nicht als CLI-Argument übergeben werden.
+Diese Befehle verwalten den Keyring auf dem ausführenden Rechner. Auf einem entfernten
+CLI-Rechner ändern sie keine Backend-Zugangsdaten. Facebooks `--resolve-page-token`
+verwendet den serverseitigen Check, der einen fehlenden/ungültigen Page-Zugang bei
+verfügbaren passenden Meta-Zugangsdaten auflösen kann.
 
-| Verwendung | Environment | Keyring-Service | Benutzername |
-|---|---|---|---|
-| Facebook und Instagram | `META_SYSTEM_USER_ACCESS_TOKEN` | `kulturbytes-social/meta` | `system-user-access-token` |
-| Mastodon | `MASTODON_ACCESS_TOKEN` | `kulturbytes-social/mastodon` | `access-token` |
+## API
 
-Für alle Plattformen gilt `.env > Environment > Keyring`. Status zeigt zusätzlich die Quelle
-(`.env`, `Environment` oder `OS-Keyring`).
-Eine explizit leere Environment-Variable unterdrückt den zugehörigen Keyring-Lookup. Zum Verwenden des Keyrings
-die Variable mit `unset` entfernen. Hilfe und Dry Runs greifen nicht auf Tokens zu.
-Die Credential-Verwaltung lädt keine Events und öffnet keine Datenbank; sie darf
-nicht mit `--publish`, `--check-auth` oder `--resolve-page-token` kombiniert werden.
+| Methode | Pfad | Verhalten |
+| --- | --- | --- |
+| GET | `/health` | Prozess lebt |
+| GET | `/api/v1/health` | PostgreSQL-Bereitschaft |
+| GET | `/api/v1/events` | Gefilterte Termine; `platform` erforderlich |
+| GET | `/api/v1/events/{event_uuid}/dates/{date_identifier}` | Eindeutige Auswahl mit Detailanreicherung |
+| POST | `/api/v1/publications/preview` | Vorschau, Bild-URL und Inhaltshash; keine Journal-Schreibzugriffe |
+| POST | `/api/v1/publications` | Einen Termin synchron veröffentlichen |
+| GET | `/api/v1/publications` | Historie, Filter `platform`, `date_uuid`, `limit` |
+| GET | `/api/v1/publications/{id}` | Bestätigte Veröffentlichung |
+| GET | `/api/v1/publication-attempts` | Filter `platform`, `date_uuid`, `state`, `active`, `limit` |
+| GET | `/api/v1/publication-attempts/{id}` | Journal mit Phase und Remote-ID |
+| POST | `/api/v1/publication-attempts/{id}/resolve` | Bestätigte manuelle Auflösung |
+| POST | `/api/v1/platforms/{platform}/check-auth` | Ausschließlich lesende Social-API-Prüfung |
+| POST | `/api/v1/jobs` | Publikationsjob anlegen und synchron ausführen |
+| GET | `/api/v1/jobs` | Jobs; Filter `state`, `limit` |
+| GET | `/api/v1/jobs/{id}` | Job einschließlich Ergebnis |
+| POST | `/api/v1/jobs/{id}/cancel` | Nur noch wartende Jobs abbrechen |
 
-Keyring ist optional; Environment-Zugang funktioniert ohne Desktop-Sitzung.
-Unter Ubuntu kann eine entsperrte Secret-Service-Sitzung nötig sein, beispielsweise
-mit `gnome-keyring` und `libsecret-tools`. Unterstützt werden Secret Service,
-KWallet, macOS Keychain und Windows Credential Manager; Klartext-Dateibackends werden
-abgewiesen. `uv sync --all-packages` installiert die Python-Abhängigkeit. Tokens
-werden nie ausgegeben oder in SQLite/Logs gespeichert. Nur erfolgreich validierte
-primäre Meta-Zugänge werden automatisch in der geschützten `.env` persistiert.
+Beispiel für Vorschau, Veröffentlichung oder Job:
 
-### Migration bestehender Meta-Zugänge
+```json
+{"platform": "mastodon", "event_uuid": "EVENT_UUID", "date_identifier": "DATE_UUID", "force_repeat": false}
+```
 
-Die Reihenfolge ist eindeutig: gemeinsamer Meta-Token aus `.env`, Environment, dann
-Keyring; nur wenn keiner verfügbar ist, folgen die bisherigen Plattform-Credentials.
-Ein ungültiger gemeinsamer Token führt zum Fehler und niemals zum Wechsel auf einen
-Legacy-Token. Ein nicht verfügbarer optionaler Meta-Keyring verhindert vorhandene
-Legacy-Environment-Zugänge nicht. Eine leere Meta-Environment-Variable erlaubt den
-Legacy-Fallback, unterdrückt aber den gemeinsamen Keyring-Eintrag.
+Optional: `city`; beim Publizieren `expected_content_sha256` aus der Vorschau.
+Unbekannte Request-Felder werden abgelehnt. Die API selbst hat keinen Bestätigungsdialog:
+ein authentifizierter POST autorisiert die einzelne Veröffentlichung; `force_repeat: true`
+autorisiert die Wiederholung. API-Clients müssen passende Bestätigungen anbieten.
 
-Facebook unterstützt vorübergehend `FACEBOOK_PAGE_ACCESS_TOKEN` / `FACEBOOK_USER_ACCESS_TOKEN`
-und deren alte Keyring-Einträge samt Recovery. Instagram unterstützt vorübergehend
-`INSTAGRAM_ACCESS_TOKEN` und seinen bisherigen Keyring-Eintrag. Ohne gemeinsamen
-Token bleibt Instagram Login der bisherige Standard; `INSTAGRAM_LOGIN_TYPE=facebook`
-funktioniert weiterhin mit dem passenden Legacy-Token. Diese Pfade geben einen
-Deprecation-Hinweis aus. Bestehende Tokens werden weder automatisch migriert noch gelöscht.
+Fehlerantworten enthalten `detail.code`, eine sichere `detail.message` und gegebenenfalls
+`attempt_id`/`remote_id`. Status: 401 Zugang verweigert, 404 nicht gefunden, 409 Konflikt,
+422 ungültige Daten, 502 Plattformfehler/unklares Remote-Ergebnis, 503 Datenbank oder lokale
+Finalisierung fehlgeschlagen. Unvorhergesehene Fehler werden als bereinigtes HTTP 500 gemeldet.
+Jede Antwort erhält eine serverseitig erzeugte `X-Request-ID`.
 
-Zum Umstellen den System User mit Asset-Zugriff konfigurieren, den gemeinsamen
-Token einmal verdeckt speichern (oder `META_SYSTEM_USER_ACCESS_TOKEN` extern bereitstellen),
-bei Instagram `INSTAGRAM_LOGIN_TYPE=facebook` setzen bzw. die alte Login-Variable entfernen
-und beide `--check-auth`-Befehle ausführen. Veraltete Einträge können danach gezielt
-mit `facebook --credentials delete --credential page` bzw. `user` und
-`instagram --credentials delete --credential access` gelöscht werden.
-Die Legacy-Optionen bleiben in dieser Übergangsversion verfügbar; ihre Entfernung
-wird separat angekündigt und erfolgt frühestens in einer kommenden inkompatiblen Version.
+## Datenbank und Wiederherstellung
 
-## Zugang prüfen
+Alembic-Revision `0001_postgresql` erstellt `publication_attempts`, `publications` und `jobs`.
+IDs sind PostgreSQL-UUIDs, Jobdaten JSONB, Zeitstempel TIMESTAMPTZ in UTC. Kulturbytes-Zeiten
+werden weiterhin in `Europe/Berlin` interpretiert. Event- und Termin-IDs bleiben opaque Strings.
 
-Im Repository-Hauptordner:
+```mermaid
+stateDiagram-v2
+    [*] --> reserved
+    reserved --> publishing
+    reserved --> failed
+    reserved --> cancelled
+    publishing --> failed: definitive Ablehnung / manuell geprüft
+    publishing --> remote_succeeded: Remote-ID bestätigt
+    publishing --> published: manuell geprüft und zugeordnet
+    remote_succeeded --> published: atomarer Abschluss
+```
+
+Ein partieller Unique-Index erlaubt höchstens einen aktiven Versuch je Plattform und
+`date_uuid` (`reserved`, `publishing`, `remote_succeeded`). Kurze transaktionale Advisory
+Locks serialisieren zusätzlich die Prüfung der Historie mit Reservierung/Finalisierung.
+Netzwerkzugriffe laufen außerhalb jeder Datenbanktransaktion. Der Schutz funktioniert
+über mehrere Backend-Prozesse hinweg; es gibt keinen Prozess-Lock als Publikationssperre.
+
+Vor jedem Social-POST werden Phase, Ziel und SHA-256 des tatsächlich versandten Texts
+journalisiert. Nach bestätigtem Erfolg wird `remote_succeeded` samt Remote-ID separat
+committed, bevor die Historienzeile und `published` atomar geschrieben werden.
+Explizite Wiederholungen erzeugen neue Historienzeilen. Transportfehler oder fehlende
+Remote-ID lassen den Versuch gesperrt; POSTs werden nie automatisch wiederholt.
 
 ```bash
-uv run kulturbytes-social facebook --check-auth
-uv run kulturbytes-social mastodon --check-auth
-uv run kulturbytes-social instagram --check-auth
+uv run kulturbytes-social attempts list --platform instagram --active
+uv run kulturbytes-social attempts resolve ATTEMPT_UUID --platform instagram --outcome published --remote-id REMOTE_ID
+uv run kulturbytes-social attempts resolve ATTEMPT_UUID --platform instagram --outcome failed
 ```
 
-Der Check liest das konfigurierte Plattformkonto bzw. die Facebook-Seite und bei
-Facebook-Wiederherstellung zusätzlich die verwalteten Seiten des Nutzers.
-Er zeigt bei Erfolg den Namen und beendet sich mit Exitcode 0; bei fehlenden oder
-ungültigen Zugangsdaten erscheint eine Fehlermeldung mit Exitcode 1, beispielsweise
-`Error: Facebook Access Token ist abgelaufen.` Tokens werden niemals angezeigt;
-auch von der API zurückgegebene Tokenwerte werden entfernt.
+Vor Auflösung den ausführenden Publisher stoppen und das Ergebnis auf der Plattform
+manuell prüfen. Die CLI verlangt dafür eine ausdrückliche Bestätigung. Über die API ist
+`confirmed: true` erforderlich. `published` repariert den Abschluss ohne erneute Social-Anfrage;
+eine bereits gespeicherte Remote-ID darf nicht ersetzt werden. `failed` gibt nur `reserved`
+oder `publishing` frei; `cancelled` nur `reserved`. Eine bestätigte Remote-Veröffentlichung
+kann nicht durch `failed` freigegeben werden. Es gibt keinen automatischen Ablauf alter Sperren.
 
-`--check-auth` hat Vorrang vor `--publish`, `--dry-run` und allen Auswahloptionen.
-Es gibt keine Event-Abfrage, Auswahl, Bildverarbeitung, Veröffentlichung oder
-Datenbankänderung. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff;
-er garantiert keine Veröffentlichungsrechte. Zum Veröffentlichen bleiben
-passende Zugangsdaten und die Bestätigung pro Termin erforderlich.
+Jobs verwenden `queued → running → succeeded/failed`. Ein Prozessabbruch kann einen Job
+in `running` belassen; Journal und Plattform vor einem erneuten Auftrag prüfen. Es gibt
+keine Hintergrund-Queue, keinen Scheduler und keine automatische Wiederaufnahme.
 
-## Termine auswählen und veröffentlichen
+## Cutover
 
-Alle Publisher sind Unterbefehle von `kulturbytes-social`.
-Für Facebook, ausgehend vom Repository-Hauptordner:
+Alle alten Publisher-Prozesse vor dem Wechsel stoppen. Die neue PostgreSQL-Datenbank
+mit Alembic vorbereiten, Backend konfigurieren, Readiness und Vorschauen prüfen, dann
+Veröffentlichungen aufnehmen. Ohne Historie gelten frühere Veröffentlichungen als unbekannt;
+die erste Auswahl deshalb anhand der bestehenden Plattform-Beiträge prüfen.
+
+Alte lokale Bestandsdaten werden weder gelesen noch übernommen. Das Projekt bietet keinen
+Importer, keinen Kompatibilitätsadapter und keinen alternativen persistenten Speicher.
+Eine benötigte Übernahme historischer Daten liegt vollständig außerhalb dieses Projekts.
+Vorhandene lokale Dateien werden nicht gelöscht, umbenannt oder verändert.
+
+## Tests
+
+Unit- und HTTP-Client-Tests laufen ohne Datenbank; PostgreSQL-Integrationstests werden ohne
+explizite Testkonfiguration als übersprungen gemeldet:
 
 ```bash
-uv run kulturbytes-social facebook --dry-run --limit 10
-```
-
-Für Mastodon, ebenfalls ausgehend vom Repository-Hauptordner:
-
-```bash
-uv run kulturbytes-social mastodon --dry-run --limit 10
-```
-
-Für Instagram, ebenfalls ausgehend vom Repository-Hauptordner:
-
-```bash
-uv run kulturbytes-social instagram --dry-run --limit 10
-```
-
-Die Liste enthält freigegebene Termine ab dem heutigen Datum, chronologisch
-sortiert. Bereits gespeicherte Veröffentlichungen werden ausgeblendet.
-Wähle die gewünschten Nummern aus, um ihre Vorschau zu sehen.
-
-Wenn du veröffentlichen möchtest, starte beispielsweise für Facebook:
-
-```bash
-uv run kulturbytes-social facebook --publish --limit 10
-```
-
-Vor jedem Beitrag fragt das Programm nach einer Bestätigung. `--limit` begrenzt
-die angebotene Liste; du entscheidest, wie viele Termine du daraus veröffentlichst.
-Der Ablauf ist interaktiv und eignet sich derzeit nicht für unbeaufsichtigte
-Timer-Läufe.
-
-| Option | Wirkung | Standard |
-|---|---|---|
-| `--dry-run` | Vorschau der ausgewählten Beiträge anzeigen | aktiv |
-| `--check-auth` | Nur Zugang prüfen, ohne Veröffentlichung oder Datenbankzugriff | aus |
-| `--publish` | Beiträge nach einzelner Bestätigung veröffentlichen | aus |
-| `--limit 10` | Höchstens zehn Termine zur Auswahl anbieten | `50` |
-| `--limit 0` | Alle passenden Termine zur Auswahl anbieten | — |
-| `--city Flensburg` | Nach Stadt filtern, unabhängig von Groß- und Kleinschreibung | alle Städte |
-| `--include-published` | Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten | aus |
-| `--help` | Hilfe zu den Befehlen anzeigen | — |
-
-Nach Installation funktioniert `kulturbytes-social` auch außerhalb des Repositorys
-ohne `uv run`. Die Plattformpakete sind interne Backends und haben keine eigenen
-öffentlichen Executables.
-
-## Einzelnen Termin direkt auswählen
-
-Im Repository-Hauptordner kannst du die nummerierte Auswahl überspringen:
-
-```bash
-uv run kulturbytes-social facebook --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
-```
-
-Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. `--date-identifier` akzeptiert
-entweder den `date_slug` (wie im Beispiel) oder die `date_uuid`. Beide Optionen
-müssen zusammen angegeben werden. Ohne `--publish` erscheint nur die Vorschau.
-Vor dem Veröffentlichen bleibt die Bestätigungsfrage bestehen.
-
-Der Termin wird über `/api/events` aufgelöst; die Liste liefert auch die bevorzugte
-`summary`. Die Detailantwort liefert die übrigen Daten und bei leerer Zusammenfassung
-die `description`. Freigabe-, Datums-, Stadt- und Duplikatfilter gelten weiterhin.
-`--limit` schließt den direkt gewählten Termin nicht aus. Nicht eindeutig gefundene
-oder ausgefilterte Termine führen zu einer Fehlermeldung und einem Fehler-Exitcode.
-
-## Inhalt der Beiträge
-
-Alle Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API
-und verlinken auf den Termin bei Kulturbytes. Vorhandene Veranstaltungsbilder
-und Hashtags ergänzen die Beiträge.
-
-Facebook verwendet einen ausführlichen Beitrag und veröffentlicht vorhandene
-Bilder als Fotopost. Mastodon verwendet einen auf das Instanzlimit (Fallback: 500 Zeichen)
-gekürzten Text und öffentliche Beiträge mit Alt-Text für Bilder. Die Details
-stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
-[Mastodon](mastodon/README.md#inhalt-der-beiträge). Instagram benötigt ein JPEG-Hauptbild
-und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; siehe
-[Instagram](instagram/README.md#bild-und-beitragstext).
-
-## Lokale Daten
-
-Jede Plattform behält ihre eigene SQLite-Datenbank und die bisherigen Veröffentlichungseinträge.
-Im Checkout sind die Standardpfade fest am Repository verankert:
-
-- `facebook/facebook_posts.sqlite3`
-- `mastodon/mastodon_posts.sqlite3`
-- `instagram/instagram_posts.sqlite3`
-
-Bestehende Dateien an diesen Orten werden weiterverwendet. Bei einer separaten
-Installation außerhalb eines Checkouts liegen die Dateien unter
-`$XDG_DATA_HOME/kulturbytes-social/`, standardmäßig `~/.local/share/kulturbytes-social/`.
-Ein Arbeitsverzeichniswechsel ändert diese Pfade nicht. Verzeichnisse werden erst
-beim Initialisieren der Datenbank angelegt, nicht bei Hilfe oder Auth-Checks.
-
-Verwende `FACEBOOK_DATABASE_PATH`, `INSTAGRAM_DATABASE_PATH` und
-`MASTODON_DATABASE_PATH` für eigene Pfade. Pro Einstellung gilt `.env` vor
-Prozessumgebung. Der plattformspezifische Schlüssel hat Vorrang vor `DATABASE_PATH`;
-dieser alte Fallback funktioniert noch, meldet aber einmal pro Prozess eine
-Veraltungswarnung. Ohne Override bleibt der Standardpfad erhalten. Absolute Werte
-werden direkt verwendet, relative Werte beziehen sich auf das Standarddatenbankverzeichnis
-der Plattform. Eine bereits einer anderen Plattform zugeordnete Datei oder ein
-fremdes Veröffentlichungsschema wird beim Öffnen abgelehnt.
-Dry-Runs können Tabellen anlegen, reservieren aber keinen Termin und schreiben
-keine Veröffentlichung. `published_events` enthält weiterhin den jeweils letzten
-bestätigten Post pro Termin; die Versuchshistorie steht im zusätzlichen Journal.
-
-## Schutz bei API-, Medien- und Veröffentlichungsfehlern
-
-Kulturbytes-Antworten werden unmittelbar am API-Eingang mit Pydantic geprüft.
-Ein ungültiger Listeneintrag wird gemeldet und übersprungen; gültige Nachbarn bleiben
-verwendbar. Eine ungültige Gesamtantwort oder direkt gewählte Veranstaltung führt
-zum Fehler. Event-UUID, Termin-UUID und Slug müssen zwischen Liste und Details
-übereinstimmen. IDs sind bewusst begrenzte, nicht leere Pfadsegmente statt strikt
-geparster UUIDs, damit auch bestehende vereinfachte IDs gültig bleiben. Fehlende
-optionale Felder und `null` werden berücksichtigt. Die Listenzusammenfassung hat
-weiter Vorrang vor der Detailbeschreibung. „Heute“ richtet sich für alle Plattformen
-nach `Europe/Berlin`, unabhängig von der Zeitzone des Rechners.
-
-Bildabrufe sind auf **`https://api.kulturbytes.de` (Port 443)** beschränkt; dieser
-Medienhost ist durch die vorhandenen Kulturbytes-Beispiele belegt. Andere Hosts,
-IP-URLs und eingebettete Zugangsdaten werden abgelehnt. Alle DNS-Antworten müssen
-öffentliche, nicht reservierte Adressen sein. Der Medien-Transport verbindet
-anschließend direkt zur geprüften numerischen IP. Der ursprüngliche Host-Header
-und TLS-SNI bleiben `api.kulturbytes.de`; die Zertifikatsprüfung bleibt aktiviert.
-Damit kann ein Wechsel der DNS-Antwort zwischen Prüfung und Verbindung den
-lokalen Medienabruf nicht auf eine private Adresse umlenken.
-
-Jeder Retry und jeder der höchstens fünf expliziten Redirects durchläuft diese
-Prüfung erneut. Ein eigener Medien-Client mit `trust_env=False` und direktem
-HTTPX-Transport ignoriert `HTTP_PROXY`, `HTTPS_PROXY` und `ALL_PROXY`; API-Tokens,
-Cookies und Auth-Konfiguration werden nicht übernommen. Dies gilt für Facebook,
-Mastodon und die Instagram-JPEG-Prüfung. Instagram erhält weiterhin die geprüfte
-öffentliche Host-URL; Metas eigener späterer Abruf unterliegt Metas Netzwerkschutz,
-nicht unserem lokalen Transport. Download-Größenlimits bleiben Gegenstand von Issue #6.
-
-Sichere GETs für Kulturbytes, Auth-Prüfungen, Instanzdaten, Polling und Medien
-verwenden pro Retry-Folge denselben Client und höchstens drei Versuche bei 429/502/503/504,
-ConnectTimeout, ReadTimeout und ConnectError. Die Wartezeiten betragen normalerweise
-0,5 und 1 Sekunde; `Retry-After` (Sekunden oder HTTP-Datum) wird auf fünf Sekunden
-pro Pause begrenzt. Ohne ausdrückliches `timeout=` übernimmt `safe_get` die
-Timeouts des verwendeten Clients (im Publisher: Connect/Pool 10, Read/Write 60 Sekunden).
-Ein ausdrückliches Override bleibt erhalten; es gibt keinen versteckten Fünf-Sekunden-Timeout
-und keine zusätzliche globale Frist für DNS oder einen fortlaufenden Download. Bei gestreamten Medien
-gelten die Retries bis zum Empfang der Header; ein abgebrochener Body wird nicht
-fortgesetzt. **POSTs werden nie automatisch wiederholt**, auch Medienuploads und
-Instagram-Container nicht. Die bestehenden fachlichen Polling-Intervalle bleiben.
-
-## Veröffentlichungsjournal und Wiederherstellung
-
-Jede Datenbank erhält zusätzlich `publisher_metadata` und `publication_attempts`.
-Die erste Tabelle schützt vor einer versehentlichen Nutzung durch eine andere
-Plattform. Das Journal speichert pro Versuch eine eigene UUID, Plattform, Termin,
-Veranstaltungsmetadaten einschließlich `date_slug`, Zeitstempel, Zustand und
-gegebenenfalls Remote-ID und -URL. `target_ref` enthält die numerische Facebook-Page-ID,
-Instagram-User-ID oder die Mastodon-Instanzadresse ohne Zugangsdaten. `content_sha256`
-ist ein deterministischer SHA-256 über Plattform, Event-/Termin-UUID, Slug und den
-exakten bereits erzeugten Nachrichtentext. Der vollständige Text wird nicht gespeichert.
-Tokens, Header und rohe API-Fehlerantworten gehören nicht ins Journal. Bestehende
-Journal-Dateien erhalten die zusätzlichen Spalten automatisch; ältere Versuche
-behalten unbekannte Werte, ohne erfundene Phasen oder Hashes. Bestehende `published_events`
-bleiben erhalten; die Tabellen und der Index werden automatisch ergänzt.
-
-Nach deiner Veröffentlichungsbestätigung wird der Termin atomar reserviert:
-`reserved → publishing → remote_succeeded → published`. Ein partieller eindeutiger
-Index sperrt aktive Versuche je Plattform und `date_uuid`. Kurze SQLite-Transaktionen
-mit `BEGIN IMMEDIATE` und fünf Sekunden `busy_timeout` schützen auch zwischen
-getrennten Prozessen. Andere Termine und Plattformen bleiben unabhängig. Das
-bestehende SQLite-Journalformat wird beibehalten; WAL wird nicht erzwungen.
-
-Vor jedem POST wird außerdem `mutation_stage` dauerhaft gesetzt:
-`facebook_photo`, `facebook_feed`, `mastodon_media`, `mastodon_status`,
-`instagram_container` oder `instagram_publish`. Die letzte Phase bleibt bei unklarem
-Ergebnis sichtbar; die Fehlerklasse wird ohne rohe Fehlermeldung gespeichert.
-
-Ein Fehler vor dem Remote-Aufruf oder eine eindeutige Ablehnung des POSTs kann den Versuch
-als `failed` freigeben. Bei 408, unklarem Verbindungsabbruch oder 5xx bleibt
-`publishing` gesperrt. Ein Fehler beim nachfolgenden Polling-GET bestätigt ebenfalls
-nicht das Ergebnis des vorherigen POSTs und gibt den Versuch nicht frei. Sobald eine
-Post-ID zurückkommt, wird sie als `remote_succeeded` gespeichert,
-bevor `published_events` aktualisiert wird. Scheitert dieser zweite Schritt, ist die
-ID aus dem Journal wiederherstellbar. Die abschließende Aktualisierung von
-`published_events` und `published` erfolgt in einer gemeinsamen Transaktion. Auch
-ein `resolve`-Aufruf übernimmt alle lokalen Änderungen atomar oder rollt sie zurück;
-ein bereits zuvor gespeicherter Remote-Erfolg bleibt dabei erhalten. Ist bereits
-die Speicherung der Remote-ID
-unmöglich, bleibt die vorher gespeicherte Reservierung gesperrt; die Fehlermeldung
-nennt die zurückgegebene ID. Ein Prozessabsturz zwischen Remote-Erfolg und Speicherung
-kann ebenfalls einen unklaren Zustand hinterlassen. Das ist keine verteilte Transaktion.
-
-Ungeklärte Versuche werden bei der Auswahl gemeldet und blockieren auch
-`--include-published`. Sie laufen nicht automatisch ab. Zuerst den betroffenen
-Publisher-Prozess stoppen und den tatsächlichen Beitrag auf der Plattform prüfen.
-Anschließend das lokale Journal anzeigen:
-
-```bash
-uv run kulturbytes-social attempts list --platform facebook --active
-uv run kulturbytes-social attempts list --platform mastodon --state remote_succeeded
-uv run kulturbytes-social attempts list --platform instagram --date-uuid "$DATE_UUID"
-uv run kulturbytes-social attempts list --platform facebook --limit 50
-```
-
-Die Liste zeigt standardmäßig die neuesten 50 Versuche zuerst; `--limit 0` zeigt alle.
-`--active` umfasst `reserved`, `publishing` und `remote_succeeded`; mit einem
-abgeschlossenen `--state` ist diese Option nicht kombinierbar. Filter und Limit
-werden direkt in SQLite angewendet. Die Anzeige benötigt keine Zugangsdaten,
-verändert keine Veröffentlichung und ruft kein Netzwerk auf.
-
-Setze `ATTEMPT_UUID` auf die angezeigte Versuch-ID. Für einen bereits im Journal
-bestätigten Remote-Erfolg repariert dieser Befehl ausschließlich die lokalen Daten:
-
-```bash
-uv run kulturbytes-social attempts resolve --platform facebook "$ATTEMPT_UUID" --outcome published
-```
-
-Bei einem unklaren Versuch mit manuell gefundenem Beitrag zusätzlich
-`--remote-id "$REMOTE_POST_ID"` mit einer numerischen Post-ID angeben (Facebook
-auch `page_post`; Mastodon optional `--remote-url` ohne Zugangsdaten, Query oder Fragment). Nur wenn
-**sicher kein Beitrag entstanden ist**, darf eine Reservierung freigegeben werden:
-
-```bash
-uv run kulturbytes-social attempts resolve --platform facebook "$ATTEMPT_UUID" --outcome failed
-```
-
-Beide Befehle verlangen eine Bestätigung der manuellen Prüfung; ein gespeicherter
-`remote_succeeded`-Zustand lässt sich nicht zu `failed` herabstufen. Ersetze `facebook`
-bei Bedarf durch `mastodon` oder `instagram`. Diese Befehle benötigen keine Tokens
-und machen keine Remote-Anfragen. Nach vollständigem Abschluss bleibt eine ausdrücklich
-bestätigte Wiederveröffentlichung möglich; sie erhält eine neue Versuch-ID.
-
-## Migration
-
-Die alten Plattform-Executables und `main.py`-Wrapper sind entfernt:
-
-| Alter Aufruf im Plattformordner | Neuer Aufruf im Repository-Hauptordner |
-|---|---|
-| `cd facebook` und `uv run main.py --publish` | `uv run kulturbytes-social facebook --publish` |
-| `cd mastodon` und `uv run main.py --publish` | `uv run kulturbytes-social mastodon --publish` |
-| `cd instagram` und `uv run main.py --publish` | `uv run kulturbytes-social instagram --publish` |
-
-Auch die bisherigen Executables `kulturbytes-facebook`, `kulturbytes-mastodon`
-und `kulturbytes-instagram` werden durch `kulturbytes-social PLATFORM` ersetzt.
-Führe nach dem Update `uv sync --all-packages` aus.
-
-Die bisherigen Standarddatenbanken in den Plattformordnern werden weiterbenutzt.
-Falls du bisher einen anderen Pfad oder ein anderes Arbeitsverzeichnis genutzt hast,
-setze **vor der nächsten Veröffentlichung** den passenden `<PLATFORM>_DATABASE_PATH` auf den absoluten Pfad
-deiner bestehenden plattformspezifischen Datei. Dasselbe gilt beim Wechsel vom
-Checkout zu einer separaten Installation: Es gibt keine automatische Kopie oder
-Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennung erhalten.
-
-
-## Hilfe bei Problemen
-
-| Problem | Was du prüfen kannst |
-|---|---|
-| `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
-| Beim Start fehlt eine Umgebungsvariable | Setze die Zugangsdaten im selben Terminal, in dem du den Publisher startest. |
-| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte das Root-Paket unter `src/` und alle vier internen Paketordner. |
-| Es stehen keine Termine zur Auswahl | Prüfe Stadtfilter und bereits veröffentlichte Termine. |
-| Die Veröffentlichung schlägt fehl | Lies die API-Fehlermeldung und die Hinweise für deine Plattform. |
-
-Weitere Hilfe findest du bei [Facebook](facebook/README.md#hilfe-bei-problemen)
-und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
-
-## Entwicklung
-
-Die Root-CLI unter `src/kulturbytes_social/cli.py` registriert nur Befehle.
-Plattformlogik bleibt in den drei Backend-Paketen; `common/` enthält die gemeinsamen
-Workflows und Helfer. Neue Publisher werden als Unterbefehle ergänzt, beispielsweise
-`kulturbytes-social bluesky`, ohne zusätzliche öffentliche Executables.
-
-Das Root-Anwendungspaket und die vier internen Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
-Das Paket `kulturbytes-common` wird lokal eingebunden. Änderungen an gemeinsamen
-Funktionen wirken auf alle Publisher.
-
-```text
-src/kulturbytes_social/cli.py   Root-Click-Gruppe
-common/src/kulturbytes_common/
-  events.py       API-Abfragen und Veranstaltungsinformationen
-  media.py        Bildadressen und Bilddownloads
-  formatting.py   Gemeinsame Markdown-Bereinigung
-  selection.py    Terminliste und interaktive Auswahl
-  database.py     Prüfung auf bereits veröffentlichte Termine
-  workflow.py     Laden, Filtern, Sortieren und Veröffentlichen
-facebook/src/kulturbytes_facebook/cli.py
-mastodon/src/kulturbytes_mastodon/cli.py
-instagram/src/kulturbytes_instagram/cli.py
-tests/test_publishers.py
-tests/test_instagram.py
-```
-
-Die Plattformpakete enthalten ihre Konfiguration, Postformatierung, API-Aufrufe
-und Datenbankschemata. Führe die gemeinsamen Tests im Repository-Hauptordner aus:
-
-```bash
+uv sync --all-packages
 uv run --all-packages python -m unittest discover -s tests -v
 ```
 
-Die Tests verwenden simulierte HTTP-Antworten, DNS, Schlafzeiten und temporäre Datenbanken.
-Zusätzliche Regressionstests prüfen API-Modelle, Berliner Tagesgrenzen, GET-Retries,
-SSRF/Redirects sowie Reservierungen über getrennte SQLite-Verbindungen und die
-Wiederherstellung nach Remote-Erfolg mit anschließendem SQLite-Fehler.
+Für die vollständige Prüfung eine **eigene** Datenbank verwenden. Der Testlauf migriert und
+leert deren drei Anwendungstabellen. Er akzeptiert nur `TEST_DATABASE_URL` mit dem Treiber
+`postgresql+psycopg` und einem Datenbanknamen, der auf `_test` endet; niemals Produktionsdaten
+unter diesem Namen betreiben. Die Tests verwenden nicht die Backend-Verbindung aus `.env`.
 
-## Lizenz
+```bash
+createdb kulturbytes_social_test
+export TEST_DATABASE_URL='postgresql+psycopg://localhost/kulturbytes_social_test'
+uv run --all-packages python -m unittest discover -s tests -v
+```
 
-[AGPL-3.0](LICENSE)
+Die Integrationstests prüfen native Datentypen, Alembic, konkurrierende Verbindungen,
+atomaren Rollback, Wiederholungen, Remote-Teilerfolg, API-Schutz und echte Adaptersequenzen
+mit simulierten HTTP-Antworten. Es gibt keine Live-Veröffentlichungen oder echten Bildabrufe.
+
+## Pakete und Plattformen
+
+`src/kulturbytes_social/`: API-Routen, Services, DB-Modelle/Repositories und HTTP-CLI.
+`common/`: Kulturbytes-Validierung, Text-/Medienhilfen, Credentials und HTTP-Sicherheit.
+`facebook/`, `instagram/`, `mastodon/`: Plattformadapter und abschließende Textformatierung.
+Der einzige CLI-Einstieg bleibt `kulturbytes-social`; keine plattformspezifischen Skript-Wrapper.
+
+Details und vorhandene Plattformgrenzen: [Facebook](facebook/README.md),
+[Instagram](instagram/README.md), [Mastodon](mastodon/README.md).
+
+## Backup und Restore
+
+Standardwerkzeuge von PostgreSQL verwenden, mit passenden `PGHOST`, `PGPORT`, `PGUSER`
+und sicher hinterlegtem Passwort (z. B. `.pgpass` mit Modus 0600). Die SQLAlchemy-URL mit
+`+psycopg` ist kein direktes Verbindungsargument für diese Programme.
+
+```bash
+pg_dump --format=custom --file=kulturbytes-social.dump kulturbytes_social
+createdb kulturbytes_social_restore
+pg_restore --no-owner --dbname=kulturbytes_social_restore kulturbytes-social.dump
+```
+
+Backups enthalten Journal und Publikationshistorie und gehören außerhalb des Repositories
+in den geschützten Betriebs-Backup-Speicher. Wiederherstellung zuerst auf eine neue Datenbank
+prüfen. Vor produktivem Wechsel alle Publisher stoppen; ein älteres Backup kann inzwischen
+erstellte Posts und aktive Versuche nicht kennen. Plattformen vor weiteren Veröffentlichungen
+prüfen, Backend auf die wiederhergestellte Datenbank konfigurieren und Readiness testen.

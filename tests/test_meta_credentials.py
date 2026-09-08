@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
@@ -26,7 +27,7 @@ ACCOUNTS = {'data': [{'id': '999', 'name': 'Other', 'access_token': 'other'},
                      {'id': '123', 'name': 'Kulturbytes', 'access_token': PAGE_TOKEN}]}
 
 
-class MetaTests(unittest.TestCase):
+class MetaTests(IsolatedEnvironmentTestCase):
     def invoke(self, platform, *, env=None, stored=None, publish=False, overrides=None, tty=False):
         module = FACEBOOK if platform == 'facebook' else instagram
         calls = []
@@ -62,6 +63,7 @@ class MetaTests(unittest.TestCase):
             self.assertIn(path, ['/v26.0/123/feed', '/v26.0/123/media', '/v26.0/123/media_publish'])
             return httpx.Response(200, json={'id': '456'})
         with tempfile.TemporaryDirectory() as directory, \
+             patch('kulturbytes_common.environment.get_env_file_path', return_value=Path(directory) / '.env'), \
              patch.dict(os.environ, ENV if env is None else env, clear=True), \
              patch.object(credentials, 'get_secret', side_effect=lambda service, user: (stored or {}).get((service, user))) as lookup, \
              patch.object(credentials, 'set_secret') as save, \

@@ -1,6 +1,5 @@
 """Publish Kulturbytes event photos through the Instagram Content Publishing API."""
 
-import os
 import re
 import sqlite3
 import time
@@ -13,9 +12,10 @@ import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import (
-    INSTAGRAM, META_SYSTEM_USER, credential_options, optional_credential, resolve_credential, warn_legacy,
+    INSTAGRAM, credential_options, resolve_credential, warn_legacy, meta_candidate, persist_validated_meta,
 )
 from kulturbytes_common.database import get_database_path
+from kulturbytes_common.environment import ResolvedValue, get_config
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -35,19 +35,23 @@ class InstagramConfig:
     user_id: str
     access_token: str = field(repr=False)
     base_url: str
+    primary: ResolvedValue | None = field(default=None, repr=False)
 
 
-def load_config() -> InstagramConfig:
+def load_config(*, allow_prompt: bool = False) -> InstagramConfig:
     """Credentials are needed for publishing and auth checks; dry run works without them."""
-    user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
-    system_token = optional_credential(META_SYSTEM_USER)
+    user_id = get_config("INSTAGRAM_USER_ID", "").strip()
+    if not user_id:
+        raise click.ClickException("INSTAGRAM_USER_ID fehlt.")
+    candidate = meta_candidate((INSTAGRAM,), allow_prompt=allow_prompt)
+    system_token = candidate.value if candidate else None
     token = system_token or resolve_credential(INSTAGRAM)
-    login = os.getenv("INSTAGRAM_LOGIN_TYPE", "facebook" if system_token else "instagram").strip().lower()
+    login = get_config("INSTAGRAM_LOGIN_TYPE", "facebook" if system_token else "instagram").strip().lower()
     if system_token and login == "instagram":
         raise click.ClickException("META_SYSTEM_USER_ACCESS_TOKEN benötigt INSTAGRAM_LOGIN_TYPE=facebook; Instagram Login ist nur mit Legacy-Token möglich.")
     if not system_token and token:
         warn_legacy("Instagram")
-    version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v26.0").strip()
+    version = get_config("INSTAGRAM_GRAPH_API_VERSION", "v26.0").strip()
     if not user_id or not token:
         raise click.ClickException("INSTAGRAM_USER_ID und/oder Meta-Zugang fehlen (META_SYSTEM_USER_ACCESS_TOKEN; Legacy: INSTAGRAM_ACCESS_TOKEN).")
     if not user_id.isascii() or not user_id.isdigit():
@@ -57,7 +61,7 @@ def load_config() -> InstagramConfig:
         raise click.ClickException("INSTAGRAM_LOGIN_TYPE muss instagram oder facebook sein.")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+", version):
         raise click.ClickException("INSTAGRAM_GRAPH_API_VERSION muss z.B. v26.0 sein.")
-    return InstagramConfig(user_id, token, f"https://{hosts[login]}/{version}")
+    return InstagramConfig(user_id, token, f"https://{hosts[login]}/{version}", candidate)
 
 
 def init_database() -> sqlite3.Connection:
@@ -253,8 +257,10 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
 
 
 def authenticate() -> InstagramConfig:
-    config = load_config()
+    config = load_config(allow_prompt=True)
     check_auth(config)
+    if config.primary:
+        persist_validated_meta(config.primary)
     return config
 
 

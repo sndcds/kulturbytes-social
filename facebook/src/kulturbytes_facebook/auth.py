@@ -8,7 +8,7 @@ import httpx
 
 from kulturbytes_common.auth import redact
 from kulturbytes_common.credentials import (
-    FACEBOOK_PAGE, FACEBOOK_USER, META_SYSTEM_USER, optional_credential, set_secret, warn_legacy,
+    FACEBOOK_PAGE, FACEBOOK_USER, optional_credential, set_secret, warn_legacy, meta_candidate, persist_validated_meta,
 )
 
 
@@ -162,9 +162,10 @@ def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False,
 
 def authenticate_page(page_id: str, version: str, *, force: bool = False,
                       secrets: list[str] | None = None) -> str:
-    system_token = optional_credential(META_SYSTEM_USER)
-    if not system_token:
+    candidate = meta_candidate((FACEBOOK_PAGE, FACEBOOK_USER))
+    if candidate is None:
         return authenticate_legacy_page(page_id, version, force=force, secrets=secrets)
+    system_token = candidate.value
     secrets = secrets if secrets is not None else []
     secrets.append(system_token)
     with httpx.Client(
@@ -176,6 +177,7 @@ def authenticate_page(page_id: str, version: str, *, force: bool = False,
                                          page_id=page_id, graph_api_version=version)
         secrets.append(token)
         name = validate(client, f'https://graph.facebook.com/{version}', page_id, token)
+    persist_validated_meta(candidate)
     output = f'✓ Facebook-Seite erreichbar: {name} ({page_id})'
     for secret in secrets:
         output = redact(output, secret)

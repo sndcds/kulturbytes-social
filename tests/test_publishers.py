@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -42,7 +43,7 @@ SUMMARY = {
 }
 
 
-class SharedFunctionsTests(unittest.TestCase):
+class SharedFunctionsTests(IsolatedEnvironmentTestCase):
     def test_selection(self):
         self.assertEqual(parse_selection('1,3-5,3', 5), [0, 2, 3, 4])
         self.assertEqual(parse_selection('alle', 3), [0, 1, 2])
@@ -67,7 +68,7 @@ class SharedFunctionsTests(unittest.TestCase):
                 download_image(client, EVENT)
 
 
-class PublisherTests(unittest.TestCase):
+class PublisherTests(IsolatedEnvironmentTestCase):
     def run_cli(self, module, directory, args, user_input, summaries=None, expected_exit=0):
         requests = []
 

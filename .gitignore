@@ -21,7 +21,7 @@ coverage.xml
 .venv/
 venv/
 
-# Local environment / secrets
+# Local environment / secrets (including atomic .env.*.tmp updates)
 .env
 .env.*
 !.env.example

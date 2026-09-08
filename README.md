@@ -52,8 +52,8 @@ Der Standardmodus zeigt nur eine Vorschau.
 
 ## Konfiguration
 
-Alle Publisher lesen ihre Einstellungen aus Umgebungsvariablen; Tokens können
-alternativ im OS-Keyring liegen. Die
+Facebook und Instagram lesen ihre Auth-Konfiguration primär aus der lokalen `.env`,
+danach aus Umgebungsvariablen und dem OS-Keyring. Mastodon behält Environment und Keyring. Die
 plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 
 - [Facebook konfigurieren](facebook/README.md#konfiguration)
@@ -61,7 +61,7 @@ plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 - [Instagram konfigurieren](instagram/README.md#zugangsdaten-und-veröffentlichung)
 
 Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-auth`.
-Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. `.env`-Dateien werden nicht automatisch geladen.
+Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. Meta-Zugangsdaten und Konto-IDs werden zentral aus der deterministischen `.env` gelesen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
 
 ## Gemeinsamer Meta-Zugang
@@ -76,7 +76,7 @@ Für Facebook und Instagram verwaltest du einen Meta System User Access Token.
 Der System User muss in deinem Meta Business Portfolio bereits Zugriff auf die
 Facebook-Seite, das verknüpfte Instagram-Professional-Konto und die verwendete App
 haben. Die erforderlichen Veröffentlichungsrechte müssen dem Token gewährt sein.
-IDs bleiben separate, nicht geheime Environment-Konfiguration. Der Publisher
+IDs bleiben separate, nicht geheime Konfiguration in `.env` oder Environment. Der Publisher
 richtet keine System User oder Assets ein und implementiert keinen Browser-OAuth-Login.
 
 Facebook ermittelt intern den Page Token der exakten Seiten-ID, validiert ihn und
@@ -87,6 +87,58 @@ Bei gemeinsamem Token ist dies der Standard; ein explizites
 Beide Publisher validieren ihr Ziel vor Events, Bildern, Datenbankzugriffen und
 Veröffentlichung. `--check-auth` erstellt keine Inhalte. Ein erfolgreicher Lesetest
 beweist nicht sämtliche Veröffentlichungsrechte.
+
+## Lokale `.env` als primäre Meta-Konfiguration
+
+```text
+.env > Prozess-Environment > OS-Keyring > verdeckte TTY-Eingabe
+```
+
+Im Source-Checkout liegt die Datei immer im Repository-Hauptordner: `<repo>/.env`.
+Der Pfad hängt vom installierten `common`-Paket ab, niemals vom Arbeitsverzeichnis.
+Ein Aufruf aus `/tmp` verwendet also dieselbe Datei. Bei einer Installation ohne
+Checkout gilt `$XDG_CONFIG_HOME/kulturbytes-social/.env`, andernfalls
+`~/.config/kulturbytes-social/.env`; ein relativer XDG-Pfad wird ignoriert.
+
+Beispiel (leere Platzhalter auch in [`.env.example`](.env.example)):
+
+```dotenv
+META_SYSTEM_USER_ACCESS_TOKEN=
+FACEBOOK_PAGE_ID=
+INSTAGRAM_USER_ID=
+FACEBOOK_GRAPH_API_VERSION=v26.0
+INSTAGRAM_LOGIN_TYPE=facebook
+```
+
+Trage die tatsächlichen Konto-IDs ein. Ist noch kein primärer Token vorhanden,
+fragen `facebook --check-auth` und `instagram --check-auth` im TTY verdeckt nach
+`Meta System User Access Token`. Vorhandene Environment-/Keyring-Tokens werden zuerst
+verwendet. **Erst nach erfolgreicher Zielprüfung** wird der primäre Token automatisch
+in `.env` gespeichert. Das gilt auch für `--publish`. Der aktuelle Aufruf verwendet
+den validierten Wert weiter im Speicher. Fehler bei Validierung oder Speicherung
+verhindern Veröffentlichung und Veröffentlichungseinträge. Ungültige Tokens verändern
+die Datei nicht. Ein ungültiger vorhandener `.env`-Token führt zum Fehler, nicht zu
+stillem Fallback; entferne oder korrigiere den Eintrag vor einem erneuten Bootstrap.
+
+Leere `.env`-Tokenwerte zählen als fehlend und erlauben Fallback. Eine explizit leere
+Prozess-Tokenvariable unterdrückt weiterhin den zugehörigen Keyring-Wert. Nicht geheime
+Meta-Einstellungen (IDs, Graph-Versionen, Instagram-Login) folgen `.env > Environment >
+Standard`, auch bei explizit leerem Wert. Werte werden wörtlich gelesen, ohne Shell-
+Ausführung oder `${...}`-Expansion; `os.environ` wird nicht verändert.
+
+Schreibvorgänge erhalten fremde Variablen, Kommentare und Leerzeilen, ersetzen denselben
+Schlüssel ohne Duplikate und verwenden eine temporäre Datei im Zielverzeichnis mit
+atomarem Austausch und Aufräumen bei Fehlern. POSIX-Dateirechte sind `0600`; auch eine
+bereits vorhandene validierte Datei wird auf `0600` beschränkt. Symlinks und ungültige
+Dateien werden abgewiesen. **Never commit .env.** `.env` und temporäre `.env.*`-Dateien
+sind ignoriert; die Beispieldatei enthält keine Secrets.
+
+CI/systemd können Tokens weiter extern bereitstellen. Nach erfolgreicher Validierung
+benötigt der Prozess Schreibzugriff auf den deterministischen Konfigurationspfad.
+Ohne TTY gibt es keine Token-Rückfrage. Hilfe und Dry Runs starten keinen Bootstrap.
+Nur der primäre Meta-Token wird automatisch persistiert; abgeleitete Facebook-Page-Tokens
+bleiben im Speicher. Legacy-Tokens werden niemals zum System-User-Token umbenannt.
+Mastodon- und Datenbankkonfiguration bleiben unverändert.
 
 ## Tokens optional im OS-Keyring speichern
 
@@ -100,7 +152,7 @@ uv run kulturbytes-social facebook --credentials delete
 
 `set` fragt den Token verdeckt ab. `status` zeigt nur vorhanden/nicht vorhanden;
 `delete` verlangt Bestätigung. Löschen wirkt für Facebook und Instagram gemeinsam,
-ändert aber keine Environment-Variable. `--credential meta` wählt diesen Eintrag
+ändert aber keine Environment-Variable und keinen bereits übernommenen `.env`-Eintrag. `--credential meta` wählt diesen Eintrag
 explizit. Tokenwerte können nicht als CLI-Argument übergeben werden.
 
 | Verwendung | Environment | Keyring-Service | Benutzername |
@@ -108,8 +160,9 @@ explizit. Tokenwerte können nicht als CLI-Argument übergeben werden.
 | Facebook und Instagram | `META_SYSTEM_USER_ACCESS_TOKEN` | `kulturbytes-social/meta` | `system-user-access-token` |
 | Mastodon | `MASTODON_ACCESS_TOKEN` | `kulturbytes-social/mastodon` | `access-token` |
 
-Environment hat Vorrang vor Keyring. Eine explizit leere Variable unterdrückt den
-zugehörigen Keyring-Lookup und zählt als fehlender Token. Zum Verwenden des Keyrings
+Für Meta gilt `.env > Environment > Keyring`. Status zeigt zusätzlich die Quelle
+(`.env`, `Environment` oder `OS-Keyring`). Mastodon behält Environment vor Keyring.
+Eine explizit leere Environment-Variable unterdrückt den zugehörigen Keyring-Lookup. Zum Verwenden des Keyrings
 die Variable mit `unset` entfernen. Hilfe und Dry Runs greifen nicht auf Tokens zu.
 Die Credential-Verwaltung lädt keine Events und öffnet keine Datenbank; sie darf
 nicht mit `--publish`, `--check-auth` oder `--resolve-page-token` kombiniert werden.
@@ -119,11 +172,12 @@ Unter Ubuntu kann eine entsperrte Secret-Service-Sitzung nötig sein, beispielsw
 mit `gnome-keyring` und `libsecret-tools`. Unterstützt werden Secret Service,
 KWallet, macOS Keychain und Windows Credential Manager; Klartext-Dateibackends werden
 abgewiesen. `uv sync --all-packages` installiert die Python-Abhängigkeit. Tokens
-werden weder ausgegeben noch in SQLite, `.env`, temporären Dateien oder Logs gespeichert.
+werden nie ausgegeben oder in SQLite/Logs gespeichert. Nur erfolgreich validierte
+primäre Meta-Zugänge werden automatisch in der geschützten `.env` persistiert.
 
 ### Migration bestehender Meta-Zugänge
 
-Die Reihenfolge ist eindeutig: gemeinsamer Meta-Token aus Environment, sonst aus
+Die Reihenfolge ist eindeutig: gemeinsamer Meta-Token aus `.env`, Environment, dann
 Keyring; nur wenn keiner verfügbar ist, folgen die bisherigen Plattform-Credentials.
 Ein ungültiger gemeinsamer Token führt zum Fehler und niemals zum Wechsel auf einen
 Legacy-Token. Ein nicht verfügbarer optionaler Meta-Keyring verhindert vorhandene

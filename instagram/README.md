@@ -29,6 +29,33 @@ Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. Die Terminkennung kann
 `date_slug` oder `date_uuid` sein. Beide Optionen sind zusammen erforderlich.
 Der Termin wird in `/api/events` gesucht und über den gefundenen Slug angereichert.
 
+## Primäre lokale `.env`
+
+Meta-Konfiguration folgt **`.env > Prozess-Environment > OS-Keyring > verdeckte TTY-Eingabe**.
+Im Checkout gilt immer `<repo>/.env`, unabhängig vom Arbeitsverzeichnis. Installiert
+außerhalb des Checkouts: `$XDG_CONFIG_HOME/kulturbytes-social/.env`, mit Fallback
+`~/.config/kulturbytes-social/.env` (relative XDG-Werte werden ignoriert).
+Die gemeinsame Datei enthält `META_SYSTEM_USER_ACCESS_TOKEN`, `FACEBOOK_PAGE_ID`
+und `INSTAGRAM_USER_ID`; beide Publisher verwenden denselben primären Token.
+
+`--check-auth` und `--publish` validieren zuerst das exakte Ziel. Erst danach werden
+primäre Tokens aus Environment, Keyring oder versteckter Eingabe automatisch in `.env`
+gespeichert; der aktuelle Aufruf arbeitet mit dem validierten Wert im Speicher weiter.
+Validierungsfehler lassen Datei, Keyring und Veröffentlichungsdatenbank unverändert.
+Schreibfehler brechen vor Veröffentlichung ab. Die Originalquelle wird nicht verändert.
+Fehlende Tokens werden nur im TTY abgefragt; ohne TTY wird klar abgebrochen. Dry Runs
+und Hilfe starten keinen Bootstrap. Ein ungültiger `.env`-Token muss korrigiert oder
+entfernt werden; es gibt keinen stillen Wechsel zu einem anderen Token.
+
+Leere `.env`-Tokenwerte erlauben Fallback; leere Prozess-Tokenvariablen unterdrücken
+weiterhin den Keyring für denselben Token. IDs und Meta-API-Einstellungen werden ebenfalls
+aus `.env` vor Environment gelesen. Bestehende Kommentare und fremde Variablen bleiben
+beim atomaren Update erhalten. POSIX-Rechte: `0600`, auch für bereits validierte Dateien.
+Temporäre Dateien werden aufgeräumt; Symlinks werden abgewiesen. **Never commit .env.**
+Abgeleitete Page-Tokens und Legacy-Tokens werden nie als primärer Meta-Token persistiert.
+CI/systemd können weiter Environment verwenden, benötigen nach Validierung aber einen
+beschreibbaren Konfigurationspfad. Details: [Projektübersicht](../README.md#lokale-env-als-primäre-meta-konfiguration).
+
 ## Zugangsdaten und Veröffentlichung
 
 Du benötigst ein Instagram-Professional-Konto (Business oder Creator), eine passend
@@ -71,7 +98,7 @@ weder Mediencontainer noch Beitrag. Ohne `--publish` bleibt es beim Dry-Run.
 
 ### Legacy-Migration
 
-Der gemeinsame Token aus Environment bzw. Keyring hat Vorrang vor
+Der gemeinsame Token aus `.env`, Environment bzw. Keyring hat Vorrang vor
 `INSTAGRAM_ACCESS_TOKEN` und dem alten Instagram-Keyring. Nur wenn kein gemeinsamer
 Token verfügbar ist, wird der Legacy-Zugang mit Deprecation-Hinweis verwendet.
 Ein leerer Meta-Environment-Wert unterdrückt den gemeinsamen Keyring und erlaubt
@@ -89,8 +116,8 @@ Keine automatische Token-Migration, OAuth-Anmeldung oder System-User-/Asset-Prov
 
 ## Optionaler OS-Keyring
 
-Tokens werden zuerst aus der jeweiligen Umgebungsvariable, sonst aus dem
-OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
+Meta-Tokens werden zuerst aus der deterministischen `.env`, dann aus der
+Umgebung und schließlich aus dem OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
 den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
 `--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
 
@@ -104,7 +131,7 @@ uv run kulturbytes-social instagram --credentials delete
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
 vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgegeben.
-Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht die Umgebung.
+Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
@@ -113,12 +140,13 @@ Standard und `--credential meta`: Service `kulturbytes-social/meta`, Benutzernam
 `system-user-access-token`, gemeinsam mit Facebook. Löschen betrifft beide Publisher.
 `--credential access` verwaltet vorübergehend den veralteten Instagram-Eintrag
 unter `kulturbytes-social/instagram` / `access-token`.
-Instanz-/Kontokonfiguration wird weiterhin über Umgebungsvariablen gesetzt.
+Meta-Kontokonfiguration wird aus `.env` vor Umgebungsvariablen gelesen.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
 `keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
-`secret-tool` auf und verwendet keine Klartext-Dateiablage. Backend-Fehler werden
+`secret-tool` auf und akzeptiert keine Klartext-Keyring-Backends. Die primäre `.env`
+wird separat mit restriktiven Dateirechten verwaltet. Backend-Fehler werden
 als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
 kaputtem Keyring. Server können extern bereitgestellte Systemd-Credentials bevorzugen;
 eine automatische Provisionierung ist nicht enthalten. Details und unterstützte

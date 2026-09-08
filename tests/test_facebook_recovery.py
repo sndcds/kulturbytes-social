@@ -1,12 +1,14 @@
 """No live Meta calls or OS keyring access."""
 import os
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from unittest.mock import patch
 
 import httpx
 from click.testing import CliRunner
 
 from kulturbytes_social.cli import cli
+from kulturbytes_common.credentials import KeyringUnavailable
 from kulturbytes_facebook import auth
 from kulturbytes_facebook import cli as facebook
 
@@ -18,7 +20,7 @@ ACCOUNTS = {'data': [{**PAGE, 'access_token': NEW}]}
 EXPIRED = {'error': {'code': 190, 'error_subcode': 463, 'message': OLD + USER}}
 
 
-class RecoveryTests(unittest.TestCase):
+class RecoveryTests(IsolatedEnvironmentTestCase):
     def invoke(self, responses, *, env=None, stored=None, tty=False, input='', args=None):
         calls = []
         def handle(request):
@@ -102,7 +104,8 @@ class RecoveryTests(unittest.TestCase):
     def test_hidden_prompt_and_optional_save(self):
         for answer in ('y', 'n'):
             with patch.object(auth.click, 'prompt', wraps=auth.click.prompt) as prompt:
-                result, _, save, _ = self.invoke([(200, ACCOUNTS), (200, PAGE)], tty=True,
+                result, _, save, _ = self.invoke([(400, EXPIRED), (200, ACCOUNTS), (200, PAGE)], tty=True,
+                                                 stored={'page-access-token': OLD},
                                                  input=f'y\n{USER}\n{answer}\n')
             self.assertEqual(result.exit_code, 0, result.output)
             self.assertTrue(prompt.call_args.kwargs['hide_input'])
@@ -183,7 +186,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_transport_and_keyring_failure_do_not_expose_secrets(self):
         with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
-             patch('kulturbytes_common.credentials.get_secret', side_effect=auth.click.ClickException('OS-Keyring ist nicht verfügbar.')), \
+             patch('kulturbytes_common.credentials.get_secret', side_effect=KeyringUnavailable('OS-Keyring ist nicht verfügbar.')), \
              patch.object(auth, 'interactive', return_value=False):
             def fail(request):
                 raise httpx.ConnectError(USER + OLD, request=request)

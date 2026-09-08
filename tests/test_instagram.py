@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -34,7 +35,7 @@ ENV = {'INSTAGRAM_USER_ID': '123', 'INSTAGRAM_ACCESS_TOKEN': 'secret-token',
 DIRECT = ['--event-uuid', 'event-1', '--date-identifier', 'date-1']
 
 
-class InstagramTests(unittest.TestCase):
+class InstagramTests(IsolatedEnvironmentTestCase):
     def setUp(self):
         lookup = patch('kulturbytes_common.credentials.get_secret', return_value=None)
         lookup.start()

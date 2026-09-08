@@ -14,7 +14,7 @@ from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import (
     INSTAGRAM, credential_options, resolve_credential, warn_legacy, meta_candidate, persist_validated_meta,
 )
-from kulturbytes_common.database import get_database_path
+from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import ResolvedValue, get_config
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
@@ -27,7 +27,7 @@ CAPTION_LIMIT = 2200
 HASHTAG_LIMIT = 5  # Conservative application cap, including Kulturbytes and city.
 POLL_ATTEMPTS = 5
 POLL_INTERVAL = 60
-DATABASE_PATH = get_database_path("instagram")
+DATABASE_PATH = None  # Optional in-process override; resolve configuration lazily.
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,7 @@ def load_config(*, allow_prompt: bool = False) -> InstagramConfig:
 
 
 def init_database() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = open_database(DATABASE_PATH or get_database_path("instagram"), "instagram")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS published_events (
             date_uuid TEXT PRIMARY KEY,

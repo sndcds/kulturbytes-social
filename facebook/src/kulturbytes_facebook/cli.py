@@ -11,7 +11,7 @@ import httpx
 from kulturbytes_common.auth import redact, response_payload
 from kulturbytes_facebook.auth import authenticate_page
 from kulturbytes_common.credentials import FACEBOOK_PAGE, credential_options, resolve_credential
-from kulturbytes_common.database import get_database_path
+from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import get_config
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
@@ -55,12 +55,11 @@ def authenticate(*, force: bool = False) -> FacebookConfig:
     return FacebookConfig(page_id, token, version, tuple(secrets))
 
 
-DATABASE_PATH = get_database_path("facebook")
+DATABASE_PATH = None  # Optional in-process override; resolve configuration lazily.
 
 
 def init_database() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = open_database(DATABASE_PATH or get_database_path("facebook"), "facebook")
 
     conn.execute(
         """

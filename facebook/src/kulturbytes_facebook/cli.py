@@ -7,6 +7,7 @@ from datetime import date
 
 import click
 import httpx
+from kulturbytes_common.auth import remote_identifier
 from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
 
 from kulturbytes_common.auth import redact, response_payload
@@ -353,9 +354,7 @@ def publish_facebook_photo(
             + redact(str(payload), config.access_token)
         )
 
-    return str(
-        post_id
-    )
+    return remote_identifier(post_id, "Facebook", config.access_token)
 
 
 def publish_text_post(
@@ -395,9 +394,7 @@ def publish_text_post(
             + redact(str(payload), config.access_token)
         )
 
-    return str(
-        post_id
-    )
+    return remote_identifier(post_id, "Facebook", config.access_token)
 
 
 def publish_event(

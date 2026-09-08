@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.auth import remote_identifier, remote_url
 from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
@@ -360,7 +361,7 @@ def upload_mastodon_media(
             + redact(str(payload), config.access_token)
         )
 
-    return str(media_id)
+    return remote_identifier(media_id, "Mastodon", config.access_token)
 
 
 def publish_mastodon_status(
@@ -406,7 +407,8 @@ def publish_mastodon_status(
             + redact(str(payload), config.access_token)
         )
 
-    return str(status_id), payload.get("url")
+    return (remote_identifier(status_id, "Mastodon", config.access_token),
+            remote_url(payload.get("url"), config.access_token))
 
 
 def publish_event(

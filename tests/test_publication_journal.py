@@ -175,7 +175,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
             INSTAGRAM: INSTAGRAM.InstagramConfig('123', 'test-secret', 'https://example.test/v26.0'),
         }
         for module, config in configs.items():
-            for result_kind in ('success', '403', '503', 'timeout'):
+            for result_kind in ('success', '403', '503', 'timeout', 'invalid_id'):
                 platform = module.__name__.split('.')[0].removeprefix('kulturbytes_')
                 db = Path(self.directory.name) / f'{platform}-{result_kind}.db'
                 with self.subTest(platform=platform, result=result_kind), patch.object(module, 'DATABASE_PATH', db):
@@ -190,7 +190,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                                 raise httpx.ReadTimeout('test-secret in URL')
                             if result_kind in ('403', '503'):
                                 return httpx.Response(int(result_kind), json={'error': {'message': 'test-secret rejected'}})
-                            return httpx.Response(200, json={'id': '123', 'url': 'https://example.test/123'})
+                            return httpx.Response(200, json={'id': 'test-secret' if result_kind == 'invalid_id' else '123', 'url': 'https://example.test/123'})
                         if '/image' in request.url.path:
                             return httpx.Response(200, content=b'\xff\xd8\xffjpeg')
                         return httpx.Response(200, json={'status_code': 'FINISHED'})
@@ -206,4 +206,10 @@ class JournalTests(IsolatedEnvironmentTestCase):
                             self.assertNotIn('test-secret', str(error.exception))
                     self.assertEqual(len(posts), 2 if module is INSTAGRAM and result_kind == 'success' else 1)
                     state = list_attempts(conn)[0]['state']
-                    self.assertEqual(state, {'success': 'published', '403': 'failed', '503': 'publishing', 'timeout': 'publishing'}[result_kind])
+                    self.assertEqual(state, {'success': 'published', '403': 'failed', '503': 'publishing', 'timeout': 'publishing', 'invalid_id': 'publishing'}[result_kind])
+
+    def test_remote_url_cannot_leak_credentials(self):
+        from kulturbytes_common.auth import remote_url
+        for value in ('https://example.test/?token=test-secret', 'https://user:pass@example.test/post', {}, 'https://bad:port/post'):
+            self.assertIsNone(remote_url(value, 'test-secret'))
+        self.assertEqual(remote_url('https://example.test/@account/123', 'test-secret'), 'https://example.test/@account/123')

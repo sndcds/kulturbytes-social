@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.auth import remote_identifier
 from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
@@ -186,11 +187,11 @@ def instagram_request(
     return response_payload(response, "Instagram", config.access_token)
 
 
-def require_id(payload: dict) -> str:
+def require_id(payload: dict, token: str = "") -> str:
     media_id = payload.get("id")
     if not isinstance(media_id, (str, int)) or not str(media_id).isdigit():
         raise RuntimeError("Instagram hat keine gültige Medien-ID zurückgegeben.")
-    return str(media_id)
+    return remote_identifier(media_id, "Instagram", token)
 
 
 def validate_image(client: httpx.Client, event: dict) -> str:
@@ -227,11 +228,11 @@ def publish_instagram_photo(
 ) -> str:
     container = instagram_request(client, config, "POST", f"{config.user_id}/media",
                                   data={"image_url": image_url, "caption": caption})
-    container_id = require_id(container)
+    container_id = require_id(container, config.access_token)
     wait_for_container(client, config, container_id)
     published = instagram_request(client, config, "POST", f"{config.user_id}/media_publish",
                                   data={"creation_id": container_id})
-    return require_id(published)
+    return require_id(published, config.access_token)
 
 
 def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,

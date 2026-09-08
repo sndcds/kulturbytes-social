@@ -43,7 +43,7 @@ def run_publisher(
             )
         with httpx.Client(
             timeout=timeout,
-            follow_redirects=True,
+            follow_redirects=False,
             headers=headers,
         ) as client:
             events = get_events(client, target=(event_uuid, date_identifier) if event_uuid is not None else None)

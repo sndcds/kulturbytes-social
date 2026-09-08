@@ -1,4 +1,5 @@
 """Public HTTPS media only; DNS is rechecked before each request and redirect."""
+from collections.abc import Iterator
 import ipaddress
 import socket
 from contextlib import contextmanager
@@ -40,7 +41,7 @@ def validate_media_url(url: str) -> None:
 
 
 @contextmanager
-def media_response(client: httpx.Client, url: str):
+def media_response(client: httpx.Client, url: str) -> Iterator[httpx.Response]:
     seen = set()
     response = None
     try:

@@ -1,7 +1,8 @@
 """Shared secret redaction and read-only authentication requests."""
 
 import json
-from urllib.parse import quote, quote_plus
+import re
+from urllib.parse import quote, quote_plus, urlsplit
 
 import click
 import httpx
@@ -59,3 +60,28 @@ def check_auth_request(platform: str, url: str, token: str, *, params: dict | No
     except httpx.RequestError:
         # Transport exceptions can embed credentials or upstream URLs.
         raise click.ClickException(f"{platform}-Zugriff konnte nicht validiert werden: Netzwerkfehler.") from None
+
+
+def remote_identifier(value: object, platform: str, token: str) -> str:
+    """Opaque remote IDs must be safe to persist, display and use as path segments."""
+    if (isinstance(value, bool) or not isinstance(value, (str, int))
+            or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', str(value))
+            or redact(str(value), token) != str(value)):
+        raise click.ClickException(f'{platform}: ungültige Remote-ID; Ergebnis manuell prüfen.')
+    return str(value)
+
+
+def remote_url(value: object, token: str) -> str | None:
+    """Optional display metadata must never carry credentials into the journal."""
+    if not isinstance(value, str) or redact(value, token) != value:
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme not in ('http', 'https') or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or any(c.isspace() or ord(c) < 32 for c in value)):
+            return None
+        parsed.port
+    except ValueError:
+        return None
+    return value

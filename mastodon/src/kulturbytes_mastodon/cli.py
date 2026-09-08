@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -26,11 +27,8 @@ class MastodonConfig:
     access_token: str = field(repr=False)
 
 
-def load_config() -> MastodonConfig:
-    token = os.getenv("MASTODON_ACCESS_TOKEN", "").strip()
+def load_base_url() -> str:
     base_url = os.getenv("MASTODON_BASE_URL", "https://norden.social").strip().rstrip("/")
-    if not token:
-        raise click.ClickException("MASTODON_ACCESS_TOKEN fehlt.")
     try:
         parsed = urlsplit(base_url)
         valid = (parsed.scheme in {"http", "https"} and parsed.hostname
@@ -42,7 +40,14 @@ def load_config() -> MastodonConfig:
         valid = False
     if not valid:
         raise click.ClickException("MASTODON_BASE_URL muss eine HTTP(S)-Instanzadresse ohne Zugangsdaten, Pfad oder Query sein.")
-    return MastodonConfig(base_url, token)
+    return base_url
+
+
+def load_config() -> MastodonConfig:
+    token = os.getenv("MASTODON_ACCESS_TOKEN", "").strip()
+    if not token:
+        raise click.ClickException("MASTODON_ACCESS_TOKEN fehlt.")
+    return MastodonConfig(load_base_url(), token)
 
 
 def check_auth(config: MastodonConfig) -> None:
@@ -131,143 +136,83 @@ def remember_post(
     conn.commit()
 
 
-def build_mastodon_message(
-    event: dict,
-    max_length: int = 500,
-) -> str:
+DEFAULT_STATUS_LIMIT = 500
+
+
+def get_status_limit(client: httpx.Client, base_url: str) -> int:
+    """Read public Mastodon v2 configuration; malformed/unavailable data uses 500."""
+    try:
+        response = client.get(f"{base_url}/api/v2/instance", follow_redirects=False)
+        response.raise_for_status()
+        value = response.json()
+        for key in ("configuration", "statuses", "max_characters"):
+            value = value.get(key) if isinstance(value, dict) else None
+        if type(value) is int and value > 0:
+            return value
+    except (httpx.HTTPError, ValueError):
+        pass
+    click.echo("Mastodon-Instanzlimit nicht verfügbar; verwende 500 Zeichen.", err=True)
+    return DEFAULT_STATUS_LIMIT
+
+
+def trim_summary(summary: str, available: int) -> str:
+    """Keep complete whitespace-delimited words; never slice a word or URL."""
+    if len(summary) <= available:
+        return summary
+    end = 0
+    for word in re.finditer(r"\S+", summary):
+        if word.end() + 1 > available:
+            break
+        end = word.end()
+    return summary[:end] + "…" if end else ""
+
+
+def build_mastodon_message(event: dict, max_length: int = DEFAULT_STATUS_LIMIT) -> str:
     event_date = event["date"]
-
-    title = strip_markdown(
-        event.get("title", "")
-    )
-
-    subtitle = strip_markdown(
-        event.get("subtitle") or ""
-    )
-
-    summary = strip_markdown(
-        event.get("summary")
-        or event.get("description")
-        or ""
-    )
-
     start = get_start_datetime(event)
-
-    venue = strip_markdown(
-        event_date.get("venue_name") or ""
-    )
-
-    city = strip_markdown(
-        event_date.get("venue_city") or ""
-    )
-
-    event_url = get_event_url(event)
-    hashtags = build_hashtags(event)
-
-    header: list[str] = [
-        f"📅 {title}",
-    ]
-
-    if subtitle:
-        header.append(subtitle)
-
-    date_line = (
-        f"🗓 {start.strftime('%d.%m.%Y')} "
-        f"· {start.strftime('%H:%M')} Uhr"
-    )
-
+    header = [f"📅 {strip_markdown(event.get('title') or '')}"]
+    date_line = f"🗓 {start:%d.%m.%Y} · {start:%H:%M} Uhr"
     end_date = event_date.get("end_date")
-
-    if (
-        end_date
-        and end_date != event_date["start_date"]
-    ):
-        end = date.fromisoformat(end_date)
-
-        date_line += (
-            f" – {end.strftime('%d.%m.%Y')}"
-        )
-
+    if end_date and end_date != event_date["start_date"]:
+        date_line += f" – {date.fromisoformat(end_date):%d.%m.%Y}"
     header.append(date_line)
-
-    location_parts: list[str] = []
-
-    if venue:
-        location_parts.append(venue)
-
+    venue = strip_markdown(event_date.get("venue_name") or "")
+    city = strip_markdown(event_date.get("venue_city") or "")
+    location = [venue] if venue else []
     if city and city.casefold() != venue.casefold():
-        location_parts.append(city)
+        location.append(city)
+    if location:
+        header.append("📍 " + ", ".join(location))
+    footer = [f"👉 {get_event_url(event)}", build_hashtags(event)]
 
-    if location_parts:
-        header.append(
-            "📍 " + ", ".join(location_parts)
+    def compose() -> str:
+        return "\n".join(header) + "\n\n" + "\n".join(footer)
+
+    if len(compose()) > max_length:
+        raise click.ClickException(
+            "Mastodon-Text ist bereits ohne Beschreibung länger als das "
+            f"Instanzlimit von {max_length} Zeichen. Veröffentlichung wurde abgebrochen."
         )
 
-    footer: list[str] = []
-
+    # Keep all required metadata and hashtags. Optional priority: subtitle,
+    # price, ticket URL, organizer, then summary. Drop metadata only as a whole.
+    subtitle = strip_markdown(event.get("subtitle") or "")
     price = format_price(event)
+    ticket = event_date.get("ticket_link")
+    organizer = strip_markdown(event.get("org_name") or "")
+    for value, target in [(subtitle, header), (price, footer),
+                          (f"🎟 {ticket}" if ticket else "", footer),
+                          (f"Veranstalter: {organizer}" if organizer else "", footer)]:
+        if value and len(compose()) + len(value) + 1 <= max_length:
+            # Subtitle follows title; optional footer metadata precedes the link.
+            index = 1 if target is header else len(footer) - 2
+            target.insert(index, value)
 
-    if price:
-        footer.append(price)
-
-    ticket_link = event_date.get(
-        "ticket_link"
-    )
-
-    if ticket_link:
-        footer.append(
-            f"🎟 {ticket_link}"
-        )
-
-    footer.append(
-        f"👉 {event_url}"
-    )
-
-    if hashtags:
-        footer.append(
-            hashtags
-        )
-
-    header_text = "\n".join(header)
-    footer_text = "\n".join(footer)
-
-    # Leerzeilen zwischen den Bereichen
-    fixed_text = (
-        f"{header_text}\n\n"
-        f"{footer_text}"
-    )
-
-    # Reserve für:
-    # \n\n + Zusammenfassung + …
-    available = (
-        max_length
-        - len(fixed_text)
-        - 3
-    )
-
-    if summary and available > 20:
-        if len(summary) > available:
-            summary = (
-                summary[: available - 1]
-                .rsplit(" ", 1)[0]
-                .rstrip(" ,.;:-")
-                + "…"
-            )
-
-        message = (
-            f"{header_text}\n\n"
-            f"{summary}\n\n"
-            f"{footer_text}"
-        )
-
-    else:
-        message = fixed_text
-
-    # Letzte Sicherheitsstufe
-    if len(message) > max_length:
-        message = message[:max_length]
-
-    return message
+    summary = strip_markdown(event.get("summary") or event.get("description") or "")
+    summary = trim_summary(summary, max_length - len(compose()) - 2)
+    if summary:
+        return "\n".join(header) + "\n\n" + summary + "\n\n" + "\n".join(footer)
+    return compose()
 
 
 def get_image_alt_text(
@@ -291,20 +236,17 @@ def get_image_alt_text(
 
 def print_event_preview(
     event: dict,
+    message: str,
+    max_length: int,
 ) -> None:
     click.echo()
     click.echo("=" * 80)
-
-    message = build_mastodon_message(
-        event,
-        max_length=500,
-    )
 
     click.echo(message)
 
     click.echo()
     click.echo(
-        f"Zeichen: {len(message)}/500"
+        f"Zeichen: {len(message)}/{max_length}"
     )
 
     image_url = get_image_url(
@@ -421,8 +363,12 @@ def upload_mastodon_media(
 def publish_mastodon_status(
     client: httpx.Client,
     event: dict,
+    *,
+    message: str | None = None,
 ) -> tuple[str, str | None]:
     config = load_config()
+    if message is None:
+        message = build_mastodon_message(event)
     media_id = None
 
     if get_image_url(event):
@@ -430,10 +376,7 @@ def publish_mastodon_status(
         wait_for_media(client, media_id)
 
     data = {
-        "status": build_mastodon_message(
-            event,
-            max_length=500,
-        ),
+        "status": message,
         "visibility": "public",
     }
 
@@ -465,10 +408,11 @@ def publish_event(
     conn: sqlite3.Connection,
     event: dict,
     dry_run: bool,
+    *,
+    max_length: int = DEFAULT_STATUS_LIMIT,
 ) -> bool:
-    print_event_preview(
-        event
-    )
+    message = build_mastodon_message(event, max_length=max_length)
+    print_event_preview(event, message, max_length)
 
     if dry_run:
         click.secho(
@@ -494,6 +438,7 @@ def publish_event(
     ) = publish_mastodon_status(
         client,
         event,
+        message=message,
     )
 
     click.secho(
@@ -590,9 +535,20 @@ def main(
         return
     if not dry_run:
         load_config()
+    base_url = load_base_url()
+    status_limit: int | None = None
+
+    def publish_with_instance_limit(
+        client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
+    ) -> bool:
+        nonlocal status_limit
+        if status_limit is None:
+            status_limit = get_status_limit(client, base_url)
+        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit)
+
     run_publisher(
         conn=init_database(),
-        publish_event=publish_event,
+        publish_event=publish_with_instance_limit,
         user_agent="Kulturbytes-Mastodon-Publisher/1.0",
         dry_run=dry_run,
         limit=limit,

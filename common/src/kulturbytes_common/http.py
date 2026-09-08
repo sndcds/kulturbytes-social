@@ -34,8 +34,7 @@ def retry_delay(response: httpx.Response | None, attempt: int) -> float:
 def safe_get(client: httpx.Client, url: str, *, stream: bool = False,
              before_request: Callable[[str], None] | None = None, **kwargs) -> httpx.Response:
     kwargs.pop('follow_redirects', None)
-    # Bound retry count, delay and each network phase. Retries reuse the client.
-    kwargs.setdefault('timeout', httpx.Timeout(5.0))
+    # HTTPX inherits client.timeout unless the caller explicitly overrides it.
     for attempt in range(MAX_ATTEMPTS):
         if before_request:
             before_request(url)

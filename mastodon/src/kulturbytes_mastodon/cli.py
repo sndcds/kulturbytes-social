@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
@@ -86,6 +87,7 @@ def init_database() -> sqlite3.Connection:
         """
     )
 
+    init_journal(conn)
     conn.commit()
     return conn
 
@@ -276,7 +278,7 @@ def wait_for_media(
     )
 
     for _ in range(10):
-        response = safe_get(client, 
+        response = safe_get(client,
             url,
             headers={
                 "Authorization": (
@@ -323,6 +325,7 @@ def upload_mastodon_media(
         "/api/v2/media"
     )
 
+    begin_remote_mutation()
     response = client.post(
         url,
         headers={
@@ -336,6 +339,7 @@ def upload_mastodon_media(
                 get_image_alt_text(event)
             ),
         },
+        follow_redirects=False,
         files={
             "file": (
                 filename,
@@ -383,12 +387,14 @@ def publish_mastodon_status(
     if media_id:
         data["media_ids[]"] = media_id
 
+    begin_remote_mutation()
     response = client.post(
         f"{config.base_url}/api/v1/statuses",
         headers={
             "Authorization": f"Bearer {config.access_token}",
         },
         data=data,
+        follow_redirects=False,
     )
 
     payload = response_payload(response, "Mastodon", config.access_token)
@@ -411,6 +417,7 @@ def publish_event(
     *,
     max_length: int = DEFAULT_STATUS_LIMIT,
     config: MastodonConfig | None = None,
+    allow_repeat: bool = False,
 ) -> bool:
     message = build_mastodon_message(event, max_length=max_length)
     print_event_preview(event, message, max_length)
@@ -433,41 +440,15 @@ def publish_event(
 
         return False
 
-    (
-        mastodon_status_id,
-        mastodon_status_url,
-    ) = publish_mastodon_status(
-        client,
-        event,
-        message=message,
-        config=config,
+    mastodon_status_id, mastodon_status_url = execute_publication(
+        conn, "mastodon", event,
+        lambda: publish_mastodon_status(client, event, message=message, config=config),
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, remote_url), allow_repeat=allow_repeat,
     )
-
-    click.secho(
-        (
-            "Mastodon-Post erstellt: "
-            f"{mastodon_status_id}"
-        ),
-        fg="green",
-    )
-
+    click.secho(f"Mastodon-Post erstellt: {mastodon_status_id}", fg="green")
+    click.echo(f"Gespeichert: {event['date']['uuid']} -> {mastodon_status_id}")
     if mastodon_status_url:
-        click.echo(
-            mastodon_status_url
-        )
-
-    remember_post(
-        conn,
-        event,
-        mastodon_status_id,
-        mastodon_status_url,
-    )
-
-    click.echo(
-        "Gespeichert: "
-        f"{event['date']['uuid']} "
-        f"-> {mastodon_status_id}"
-    )
+        click.echo(mastodon_status_url)
 
     return True
 
@@ -546,7 +527,7 @@ def mastodon_command(
         nonlocal status_limit
         if status_limit is None:
             status_limit = get_status_limit(client, base_url)
-        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config)
+        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config, allow_repeat=include_published)
 
     run_publisher(
         conn=init_database(),

@@ -16,7 +16,7 @@ def get_events(
     client: httpx.Client,
     *, target: tuple[str, str] | None = None,
 ) -> list[dict]:
-    response = safe_get(client, 
+    response = safe_get(client,
         KULTURBYTES_EVENTS_API,
     )
 

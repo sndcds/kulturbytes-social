@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import click
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, ValidationError, field_validator
 
-Identifier = Annotated[str, Field(strict=True, min_length=1, max_length=200, pattern=r'^[A-Za-z0-9_.:-]+$')]
+Identifier = Annotated[str, Field(strict=True, min_length=1, max_length=200, pattern=r'^[A-Za-z0-9_][A-Za-z0-9_.:-]*$')]
 
 
 class APIModel(BaseModel):
@@ -34,7 +34,7 @@ class APIModel(BaseModel):
     def public_link(cls, value: str | None) -> str | None:
         if value:
             parsed = urlsplit(value)
-            if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+            if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None or parsed.password is not None or any(c.isspace() for c in value):
                 raise ValueError('Invalid link')
             parsed.port
         return value

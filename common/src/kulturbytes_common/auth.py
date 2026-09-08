@@ -5,6 +5,7 @@ from urllib.parse import quote, quote_plus
 
 import click
 import httpx
+from .publications import RemoteRejected
 from kulturbytes_common.http import safe_get
 
 
@@ -39,13 +40,14 @@ def api_error(response: httpx.Response, payload: object, platform: str, token: s
                    else f"{platform} Access Token ist ungültig oder abgelaufen.")
     elif platform == "Mastodon" and response.status_code in {401, 403}:
         message = "Mastodon-Zugangsdaten ungültig oder abgelaufen."
-    return click.ClickException(
+    error_type = RemoteRejected if (400 <= response.status_code < 500 and response.status_code != 408) or (200 <= response.status_code < 300 and error) else click.ClickException
+    return error_type(
         f"{message} HTTP {response.status_code}: " + redact(response.text, token)
     )
 
 
 def check_auth_request(platform: str, url: str, token: str, *, params: dict | None = None) -> dict:
-    # No redirects, retries, event discovery, database access, or write requests.
+    # No redirects, event discovery, database access, or write requests.
     try:
         with httpx.Client(
             timeout=httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0),

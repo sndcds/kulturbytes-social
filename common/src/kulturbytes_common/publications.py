@@ -1,0 +1,187 @@
+"""Durable attempts and atomic per-platform/date reservations, without POST retries."""
+from collections.abc import Callable
+from contextvars import ContextVar
+import json
+import sqlite3
+from uuid import uuid4
+
+import click
+
+ACTIVE = ('reserved', 'publishing', 'remote_succeeded')
+_current: ContextVar[tuple[sqlite3.Connection, str] | None] = ContextVar('publication_attempt', default=None)
+
+
+class RemoteRejected(click.ClickException):
+    """A definitive API rejection, as opposed to an uncertain transport failure."""
+
+
+def init_journal(conn: sqlite3.Connection) -> None:
+    conn.execute('''CREATE TABLE IF NOT EXISTS publication_attempts (
+        attempt_uuid TEXT PRIMARY KEY,
+        platform TEXT NOT NULL,
+        date_uuid TEXT NOT NULL,
+        event_uuid TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('reserved','publishing','remote_succeeded','published','failed')),
+        remote_id TEXT,
+        remote_url TEXT,
+        error_class TEXT,
+        event_snapshot TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )''')
+    conn.execute('''CREATE UNIQUE INDEX IF NOT EXISTS active_publication
+        ON publication_attempts(platform, date_uuid)
+        WHERE state IN ('reserved','publishing','remote_succeeded')''')
+
+
+def list_attempts(conn: sqlite3.Connection) -> list[dict]:
+    cursor = conn.execute('SELECT * FROM publication_attempts ORDER BY created_at, rowid')
+    names = [column[0] for column in cursor.description]
+    return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+
+def get_attempt(conn: sqlite3.Connection, attempt_uuid: str) -> dict:
+    cursor = conn.execute('SELECT * FROM publication_attempts WHERE attempt_uuid=?', (attempt_uuid,))
+    row = cursor.fetchone()
+    if row is None:
+        raise click.ClickException('Veröffentlichungsversuch nicht gefunden.')
+    return dict(zip([column[0] for column in cursor.description], row))
+
+
+def unresolved_attempt(conn: sqlite3.Connection, date_uuid: str, platform: str | None = None) -> dict | None:
+    cursor = conn.execute('''SELECT * FROM publication_attempts
+        WHERE date_uuid=? AND (? IS NULL OR platform=?)
+        AND state IN ('reserved','publishing','remote_succeeded') LIMIT 1''', (date_uuid, platform, platform))
+    row = cursor.fetchone()
+    return dict(zip([column[0] for column in cursor.description], row)) if row else None
+
+
+def describe_attempt(attempt: dict) -> str:
+    return (f"Plattform={attempt['platform']}, date_uuid={attempt['date_uuid']}, "
+            f"Versuch={attempt['attempt_uuid']}, Status={attempt['state']}, "
+            f"Remote-ID={attempt['remote_id'] or 'unbekannt'}")
+
+
+def reserve_attempt(conn: sqlite3.Connection, platform: str, event: dict, *, allow_repeat: bool = False) -> str:
+    attempt_uuid = str(uuid4())
+    date_uuid = event['date']['uuid']
+    # Only the metadata required to rebuild published_events; no credentials/content.
+    snapshot = {key: event[key] for key in ('uuid', 'title')}
+    snapshot['date'] = {key: event['date'].get(key) for key in ('uuid', 'start_date', 'start_time')}
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        active = unresolved_attempt(conn, date_uuid, platform)
+        if active:
+            raise click.ClickException('Termin ist reserviert oder ungeklärt: ' + describe_attempt(active)
+                                       + '. Mit kulturbytes-social attempts prüfen und auflösen.')
+        if not allow_repeat and conn.execute('SELECT 1 FROM published_events WHERE date_uuid=?', (date_uuid,)).fetchone():
+            raise click.ClickException('Termin wurde inzwischen veröffentlicht; keine erneute Veröffentlichung.')
+        conn.execute('''INSERT INTO publication_attempts
+            (attempt_uuid,platform,date_uuid,event_uuid,state,event_snapshot) VALUES (?,?,?,?,'reserved',?)''',
+                     (attempt_uuid, platform, date_uuid, event['uuid'], json.dumps(snapshot, ensure_ascii=False)))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return attempt_uuid
+
+
+def _transition(conn: sqlite3.Connection, attempt_uuid: str, state: str, previous: tuple[str, ...],
+                *, remote_id: str | None = None, remote_url: str | None = None, error_class: str | None = None) -> None:
+    placeholders = ','.join('?' for _ in previous)
+    try:
+        cursor = conn.execute(f'''UPDATE publication_attempts SET state=?,
+            remote_id=COALESCE(?,remote_id), remote_url=COALESCE(?,remote_url),
+            error_class=?, updated_at=CURRENT_TIMESTAMP
+            WHERE attempt_uuid=? AND state IN ({placeholders})''',
+            (state, remote_id, remote_url, error_class, attempt_uuid, *previous))
+        if cursor.rowcount != 1:
+            raise click.ClickException('Veröffentlichungszustand wurde geändert; Vorgang abgebrochen.')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def begin_remote_mutation() -> None:
+    """Commit intent before any content-creation POST, including media/container creation."""
+    current = _current.get()
+    if current:
+        conn, attempt_uuid = current
+        _transition(conn, attempt_uuid, 'publishing', ('reserved', 'publishing'))
+
+
+def mark_remote_succeeded(conn: sqlite3.Connection, attempt_uuid: str, remote_id: str,
+                          remote_url: str | None = None) -> None:
+    if not isinstance(remote_id, str) or not remote_id:
+        raise click.ClickException('Remote-Erfolg ohne gültige ID; manuelle Prüfung erforderlich.')
+    _transition(conn, attempt_uuid, 'remote_succeeded', ('reserved', 'publishing'),
+                remote_id=remote_id, remote_url=remote_url)
+
+
+def mark_published(conn: sqlite3.Connection, attempt_uuid: str) -> None:
+    _transition(conn, attempt_uuid, 'published', ('remote_succeeded',))
+
+
+def mark_failed(conn: sqlite3.Connection, attempt_uuid: str, error_class: str) -> None:
+    _transition(conn, attempt_uuid, 'failed', ('reserved', 'publishing'), error_class=error_class)
+
+
+def execute_publication(conn: sqlite3.Connection, platform: str, event: dict,
+                        publish: Callable[[], tuple[str, str | None]],
+                        finalize: Callable[[str, str | None], None], *, allow_repeat: bool = False) -> tuple[str, str | None]:
+    attempt_uuid = reserve_attempt(conn, platform, event, allow_repeat=allow_repeat)
+    token = _current.set((conn, attempt_uuid))
+    remote_id = None
+    try:
+        remote_id, remote_url = publish()
+        mark_remote_succeeded(conn, attempt_uuid, remote_id, remote_url)
+        finalize(remote_id, remote_url)
+        mark_published(conn, attempt_uuid)
+        return remote_id, remote_url
+    except Exception as exc:
+        conn.rollback()
+        if remote_id is not None:
+            # Even a failure to persist the returned ID leaves the committed publishing reservation.
+            raise click.ClickException(
+                f'ACHTUNG: Remote-Veröffentlichung erfolgreich, lokale Speicherung unvollständig. '
+                f'Plattform={platform}, date_uuid={event["date"]["uuid"]}, Versuch={attempt_uuid}, '
+                f'Remote-ID={remote_id}. Nicht erneut posten; mit kulturbytes-social attempts prüfen.'
+            ) from None
+        attempt = get_attempt(conn, attempt_uuid)
+        if attempt['state'] == 'reserved' or isinstance(exc, RemoteRejected):
+            mark_failed(conn, attempt_uuid, type(exc).__name__)
+            raise
+        raise click.ClickException('Remote-Ergebnis ungeklärt; erneutes Posten gesperrt. '
+                                   + describe_attempt(attempt) + '. Mit kulturbytes-social attempts prüfen.') from None
+    finally:
+        _current.reset(token)
+
+
+def resolve_attempt(conn: sqlite3.Connection, attempt_uuid: str, outcome: str,
+                    finalize: Callable[[dict, str, str | None], None], *, remote_id: str | None = None,
+                    remote_url: str | None = None) -> None:
+    """Operator has stopped the worker and checked the remote platform before calling."""
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        attempt = get_attempt(conn, attempt_uuid)
+        if attempt['state'] not in ACTIVE:
+            raise click.ClickException('Versuch ist bereits abgeschlossen.')
+        if outcome == 'failed':
+            mark_failed(conn, attempt_uuid, 'OperatorConfirmedNoPublication')
+            return
+        if outcome != 'published':
+            raise click.ClickException('Unbekanntes Ergebnis.')
+        if attempt['remote_id']:
+            if remote_id and remote_id != attempt['remote_id']:
+                raise click.ClickException('Remote-ID darf einen bestätigten Erfolg nicht überschreiben.')
+            remote_id, remote_url = attempt['remote_id'], attempt['remote_url']
+        if not remote_id:
+            raise click.ClickException('Für bestätigten Remote-Erfolg ist --remote-id erforderlich.')
+        if attempt['state'] != 'remote_succeeded':
+            mark_remote_succeeded(conn, attempt_uuid, remote_id, remote_url)
+        finalize(json.loads(attempt['event_snapshot']), remote_id, remote_url)
+        mark_published(conn, attempt_uuid)
+    except Exception:
+        conn.rollback()
+        raise

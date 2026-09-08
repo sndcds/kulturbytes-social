@@ -10,10 +10,13 @@ class APIModelTests(IsolatedEnvironmentTestCase):
         for payload in ({}, {'data': {}}, {'data': {'events': {}}}, []):
             with self.assertRaises(click.ClickException):
                 validate_list(payload)
-        for patch in ({'uuid': None}, {'date_uuid': ''}, {'start_date': '2026-02-30'}, {'start_time': 9}, {'venue_city': []}):
+        for patch in ({'uuid': '..'}, {'uuid': None}, {'date_uuid': ''}, {'start_date': '2026-02-30'}, {'start_time': 9}, {'venue_city': []}):
             invalid = {**SUMMARY, **patch}
             valid = validate_list({'data': {'events': [SUMMARY, invalid, SUMMARY]}})
             self.assertEqual(len(valid), 2)
+        for key in ('uuid', 'date_uuid'):
+            bad = {name: value for name, value in SUMMARY.items() if name != key}
+            self.assertEqual(validate_list({'data': {'events': [bad, SUMMARY]}}), [SUMMARY])
         self.assertIsNone(validate_list({'data': {'events': [{**SUMMARY, 'venue_city': None}]}})[0]['venue_city'])
 
     def test_direct_invalid_match_cannot_be_hidden_by_valid_sibling(self):

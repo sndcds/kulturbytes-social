@@ -212,7 +212,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                         module, directory, ['--include-published', '--publish'], '1\ny\ny\n',
                     )
                     publish.assert_called_once()
-                self.assertIn('Remote failure', result.output)
+                self.assertIn('Veröffentlichung fehlgeschlagen', result.output)
                 self.assertNotIn('Gespeichert:', result.output)
                 self.assertEqual(self.publication_records(directory), previous)
 
@@ -283,7 +283,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                         ['--publish', '--event-uuid', 'event-1', '--date-identifier', 'date-1'],
                         'y\n', expected_exit=1,
                     )
-                self.assertIn('Remote failure', result.output)
+                self.assertIn('Veröffentlichung fehlgeschlagen', result.output)
                 with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
                     self.assertFalse(already_published(conn, 'date-1'))
 

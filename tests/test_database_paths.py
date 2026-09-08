@@ -44,3 +44,12 @@ class DatabasePathTests(IsolatedEnvironmentTestCase):
             with database.open_database(path, 'facebook') as conn:
                 self.assertEqual(conn.execute('SELECT * FROM published_events').fetchall(), [('date-1', 'post-1')])
                 self.assertEqual(conn.execute('PRAGMA busy_timeout').fetchone(), (5000,))
+
+    def test_legacy_dotenv_fallback_warns_only_once_and_specific_key_wins(self):
+        environment.get_env_file_path().write_text('DATABASE_PATH=/tmp/legacy-state.db\n')
+        with patch.dict(os.environ, {}, clear=True), patch.object(database, '_warned_legacy', False), patch('click.echo') as echo:
+            for platform in database.PLATFORM_COLUMNS:
+                self.assertEqual(database.get_database_path(platform), Path('/tmp/legacy-state.db'))
+            echo.assert_called_once()
+            with patch.dict(os.environ, {'MASTODON_DATABASE_PATH': '/tmp/mastodon-state.db'}):
+                self.assertEqual(database.get_database_path('mastodon'), Path('/tmp/mastodon-state.db'))

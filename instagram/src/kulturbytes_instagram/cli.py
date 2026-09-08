@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
@@ -79,6 +80,7 @@ def init_database() -> sqlite3.Connection:
             published_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    init_journal(conn)
     conn.commit()
     return conn
 
@@ -138,7 +140,7 @@ def build_instagram_caption(event: dict) -> str:
     header_text = "\n".join(header)
     fixed = f"{header_text}\n\n{footer}"
     if len(fixed) > CAPTION_LIMIT:
-        raise ValueError("Instagram: Titel/Metadaten sind zu lang; Link und Hashtags werden nicht abgeschnitten.")
+        raise click.ClickException("Instagram: Titel/Metadaten sind zu lang; Link und Hashtags werden nicht abgeschnitten.")
     summary = strip_markdown(event.get("summary") or event.get("description") or "")
     available = CAPTION_LIMIT - len(fixed) - 2
     if summary and available > 1:
@@ -172,6 +174,7 @@ def instagram_request(
         response = safe_get(client, f"{config.base_url}/{path}",
                             headers={"Authorization": f"Bearer {config.access_token}"}, params=params)
         return response_payload(response, "Instagram", config.access_token)
+    begin_remote_mutation()
     try:
         response = client.request(
             method, f"{config.base_url}/{path}",
@@ -193,7 +196,7 @@ def require_id(payload: dict) -> str:
 def validate_image(client: httpx.Client, event: dict) -> str:
     image_url = get_image_url(event)
     if not image_url:
-        raise ValueError("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
+        raise click.ClickException("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
     with media_response(client, image_url) as response:
         prefix = b""
         for chunk in response.iter_bytes():
@@ -201,7 +204,7 @@ def validate_image(client: httpx.Client, event: dict) -> str:
             if len(prefix) >= 3:
                 break
         if not prefix.startswith(b"\xff\xd8\xff"):
-            raise ValueError("Instagram benötigt ein öffentlich abrufbares JPEG. Das Hauptbild ist kein JPEG.")
+            raise click.ClickException("Instagram benötigt ein öffentlich abrufbares JPEG. Das Hauptbild ist kein JPEG.")
     return str(response.url)
 
 
@@ -232,7 +235,7 @@ def publish_instagram_photo(
 
 
 def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
-                  *, config: InstagramConfig | None = None) -> bool:
+                  *, config: InstagramConfig | None = None, allow_repeat: bool = False) -> bool:
     caption = build_instagram_caption(event)
     click.echo("\n" + "=" * 80)
     click.echo(caption)
@@ -247,9 +250,11 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
         click.echo("Übersprungen.")
         return False
     config = config or authenticate()
-    media_id = publish_instagram_photo(client, config, image_url, caption)
-    # Persist immediately after confirmation from Meta, without optional API reads.
-    remember_post(conn, event, media_id)
+    media_id, _ = execute_publication(
+        conn, "instagram", event,
+        lambda: (publish_instagram_photo(client, config, image_url, caption), None),
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id), allow_repeat=allow_repeat,
+    )
     click.secho(f"Instagram-Post erstellt: {media_id}", fg="green")
     return True
 
@@ -279,7 +284,7 @@ def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_
     config = authenticate() if not dry_run else None
 
     def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
-        return publish_event(client, conn, event, dry_run=dry_run, config=config)
+        return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
 
     run_publisher(
         conn=init_database(), publish_event=publish_with_config,

@@ -4,6 +4,7 @@ import sqlite3
 import click
 import httpx
 
+from .publications import unresolved_attempt, describe_attempt
 from .database import already_published
 from .events import get_events, get_event_details, should_publish
 from .selection import select_events
@@ -94,6 +95,15 @@ def run_publisher(
                 )
 
                 if not date_uuid:
+                    continue
+
+                active = unresolved_attempt(conn, date_uuid)
+                if active:
+                    message = 'Termin ist reserviert oder ungeklärt: ' + describe_attempt(active)
+                    message += '. Mit kulturbytes-social attempts prüfen und auflösen.'
+                    if event_uuid is not None:
+                        raise click.ClickException(message)
+                    click.echo(message, err=True)
                     continue
 
                 if (
@@ -251,42 +261,24 @@ def run_publisher(
                         dry_run=dry_run,
                     )
 
-                except httpx.HTTPStatusError as exc:
-                    if event_uuid is not None:
-                        raise click.ClickException(str(exc)) from exc
-                    click.secho(
-                        (
-                            "\nHTTP/API-Fehler bei: "
-                            f"{summary_event.get('title')}"
-                        ),
-                        fg="red",
-                        err=True,
-                    )
-
-                    click.echo(
-                        str(exc),
-                        err=True,
-                    )
-
                 except Exception as exc:
+                    # Transport/third-party exceptions can embed credentials in URLs.
+                    if isinstance(exc, click.ClickException):
+                        message = exc.format_message()
+                    elif isinstance(exc, httpx.HTTPStatusError):
+                        message = f"HTTP/API-Fehler (HTTP {exc.response.status_code})."
+                    elif isinstance(exc, httpx.RequestError):
+                        message = "HTTP/API-Netzwerkfehler."
+                    elif isinstance(exc, ValueError):
+                        # Formatters raise our own content validation errors.
+                        message = "Ungültige Veranstaltungsdaten; Inhalt kann nicht veröffentlicht werden."
+                    else:
+                        message = f"Veröffentlichung fehlgeschlagen ({type(exc).__name__})."
+                    context = (f"Event-UUID={summary_event['uuid']}, date_uuid={date_uuid}, "
+                               f"date_slug={summary_event['date_slug']}")
                     if event_uuid is not None:
-                        raise click.ClickException(str(exc)) from exc
-                    click.secho(
-                        (
-                            "\nFehler bei: "
-                            f"{summary_event.get('title')}"
-                        ),
-                        fg="red",
-                        err=True,
-                    )
-
-                    click.echo(
-                        (
-                            f"{type(exc).__name__}: "
-                            f"{exc}"
-                        ),
-                        err=True,
-                    )
+                        raise click.ClickException(f"{message} {context}") from None
+                    click.secho(f"\nFehler bei {summary_event['title']}: {message} {context}", fg="red", err=True)
 
     finally:
         conn.close()

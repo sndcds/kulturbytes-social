@@ -231,7 +231,7 @@ class AuthTests(unittest.TestCase):
 
                 database = Path(directory) / 'posts.sqlite3'
                 client = httpx.Client(transport=httpx.MockTransport(respond))
-                with patch.dict(os.environ, {}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
+                with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, {}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
                     'kulturbytes_common.workflow.httpx.Client', return_value=client,
                 ):
                     result = CliRunner().invoke(module.main, ['--dry-run'], input='1\n')

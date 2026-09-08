@@ -348,7 +348,7 @@ Use the detailed event field:
 event.get("tags") or []
 ```
 
-Normalize every non-empty tag into a hashtag, discarding values that contain no usable characters. For Mastodon, all tags may not fit; preserve `#Kulturbytes` and the city where possible and remove optional tags only as whole hashtags when implementing length handling.
+Normalize every non-empty tag into a hashtag, discarding values that contain no usable characters. Mastodon preserves all generated hashtags, including `#Kulturbytes` and the city. If required metadata and hashtags do not fit the resolved limit, fail closed rather than truncating them.
 
 Always add:
 
@@ -616,9 +616,18 @@ Alt text should be useful and human-readable.
 
 Do not assume unlimited status text.
 
-Current preview and publishing code use a hard-coded `max_length=500` and Python `len()`. They do not query the instance configuration.
+The Mastodon CLI resolves `configuration.statuses.max_characters` from public
+`GET /api/v2/instance` once, when the first valid selected event reaches formatting,
+and reuses it for the invocation. Metadata reads require no social credentials;
+`--check-auth` does not fetch instance metadata. Each nesting level is checked
+and only a positive integer (not bool/string/float) is accepted. HTTP/transport
+errors, invalid JSON, and missing/malformed values produce a concise warning
+and a 500-character fallback. No extra authenticated retry is made.
 
-A read-only check of `https://norden.social/api/v2/instance` on 2026-09-07 returned `configuration.statuses.max_characters = 500` and `characters_reserved_per_url = 23`. These values can change. For future limit handling, query `GET /api/v2/instance`, retain a 500-character fallback, and account for the instance's URL counting rules rather than assuming Python `len()` matches server validation. See the official [instance API](https://docs.joinmastodon.org/methods/instance/) and [configuration fields](https://docs.joinmastodon.org/entities/Instance/).
+Composition and preview use Python `len()` as the application character count.
+Instance-specific URL reservation and grapheme counting are not implemented;
+server-side validation can therefore differ. See the official [instance API](https://docs.joinmastodon.org/methods/instance/)
+and [configuration fields](https://docs.joinmastodon.org/entities/Instance/).
 
 ### Mastodon content strategy
 
@@ -652,7 +661,14 @@ Never truncate the Kulturbytes URL.
 
 Never truncate hashtags in the middle of a hashtag.
 
-These are requirements for improved composition. The current final fallback uses `message[:max_length]`, which can cut off the Kulturbytes URL or hashtags when the fixed content is too long. It does not yet guarantee their preservation.
+The builder keeps title, date/time, venue/city, the complete Kulturbytes URL,
+and all hashtags as required content. Optional metadata is included as whole fields
+in priority order: subtitle, price, ticket URL, organizer. Summary/description
+receives the remaining space and is trimmed only at word boundaries; an oversized
+single word is omitted. Required-content overflow raises a clear error before
+confirmation or media upload and leaves publication records unchanged.
+The final message is built once per event, displayed with the resolved limit,
+and passed unchanged to the status request. Never slice the complete message.
 
 ---
 
@@ -932,7 +948,7 @@ uv run --all-packages python -m unittest discover -s tests -v
 
 They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, filtering/sorting/limits, and confirmed repeat publications (updated IDs, metadata, timestamps, and unchanged records on remote failure). Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
 
-Additional coverage is still needed for Markdown normalization, Mastodon link/hashtag preservation and instance limits, malformed dates, platform HTTP errors, and media processing. Do not use live social publishing in automated tests.
+Additional coverage is still needed for Markdown normalization, malformed dates, platform HTTP errors, and media processing. Do not use live social publishing in automated tests.
 
 ---
 

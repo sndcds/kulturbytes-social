@@ -140,13 +140,30 @@ oder ausgefilterte Termine führen zu einer Fehlermeldung und einem Fehler-Exitc
 ## Inhalt der Beiträge
 
 Der Publisher erstellt öffentliche Mastodon-Beiträge. Er bereinigt Markdown
-und kürzt den Beitragstext auf höchstens 500 Zeichen. Je nach verfügbaren Daten
+und berücksichtigt das Zeichenlimit der Zielinstanz. Je nach verfügbaren Daten
 enthält der Beitrag Veranstaltungsinformationen, einen Kulturbytes-Link und
 Hashtags. Ein vorhandenes Veranstaltungsbild wird mit Alt-Text hochgeladen.
 Ohne hinterlegtes Bild entsteht ein Textbeitrag.
 
-Die Grenze von 500 Zeichen und die öffentliche Sichtbarkeit sind im Programm
-festgelegt; sie lassen sich derzeit nicht über Umgebungsvariablen ändern.
+Das Limit wird beim ersten gültigen ausgewählten Termin über die öffentliche
+`GET /api/v2/instance`-Abfrage aus `configuration.statuses.max_characters` gelesen
+und im gesamten Lauf wiederverwendet, auch im Dry-Run ohne Token. Fehlt ein gültiger
+positiver Ganzzahlwert oder scheitert die Abfrage, verwendet das Programm mit einem
+Hinweis 500 Zeichen. `--check-auth` führt diese Abfrage nicht aus. Siehe die
+[Mastodon-Instanzdokumentation](https://docs.joinmastodon.org/entities/Instance/).
+
+Titel, Datum/Zeit, Ort, Kulturbytes-Link und sämtliche erzeugten Hashtags bleiben
+vollständig. Die Beschreibung wird zuerst an Wortgrenzen gekürzt oder weggelassen.
+Optionale Metadaten werden nur ganz übernommen, in dieser Priorität: Untertitel,
+Preis, Ticket-Link, Veranstalter; die Beschreibung erhält den verbleibenden Platz.
+Ein Ticket-Link wird niemals teilweise übernommen. Passen bereits die Pflichtangaben
+nicht, wird der Termin vor Bild-Upload und Veröffentlichung mit einer Fehlermeldung
+abgebrochen; der bestehende Datenbankeintrag bleibt unverändert.
+
+Die Vorschau zeigt `Zeichen: verwendete/erlaubte`, etwa `Zeichen: 611/750`.
+Exakt dieser Vorschautext wird veröffentlicht. Gezählt wird mit Python `len()`;
+eine besondere URL- oder Graphemzählung der Instanz wird nicht nachgebildet.
+Die Sichtbarkeit bleibt fest auf öffentlich eingestellt.
 
 ## Lokale Daten
 

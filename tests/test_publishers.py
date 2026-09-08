@@ -78,7 +78,7 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(request.url.path, '/api/event/event-1/date/209901011830')
             return httpx.Response(200, json={'data': EVENT})
         client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
+        with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client
         ):
             result = CliRunner().invoke(module.main, args, input=user_input)
@@ -173,7 +173,7 @@ class PublisherTests(unittest.TestCase):
                     function = 'publish_text_post' if module is FACEBOOK else 'publish_mastodon_status'
                     value = 'new-post' if module is FACEBOOK else ('new-post', status_url)
 
-                    def remote_success(*args):
+                    def remote_success(*args, **kwargs):
                         self.assertEqual(self.publication_records(directory), previous)
                         return value
 

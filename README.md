@@ -152,7 +152,7 @@ und verlinken auf den Termin bei Kulturbytes. Vorhandene Veranstaltungsbilder
 und Hashtags ergänzen die Beiträge.
 
 Facebook verwendet einen ausführlichen Beitrag und veröffentlicht vorhandene
-Bilder als Fotopost. Mastodon verwendet einen auf höchstens 500 Zeichen
+Bilder als Fotopost. Mastodon verwendet einen auf das Instanzlimit (Fallback: 500 Zeichen)
 gekürzten Text und öffentliche Beiträge mit Alt-Text für Bilder. Die Details
 stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
 [Mastodon](mastodon/README.md#inhalt-der-beiträge). Instagram benötigt ein JPEG-Hauptbild

@@ -34,7 +34,7 @@ class DateIdentityTests(unittest.TestCase):
             return httpx.Response(200, json={'data': details[len(requests) - 2]})
 
         client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.dict(os.environ, {**PUBLISHER_ENV, **ENV}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
+        with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, {**PUBLISHER_ENV, **ENV}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client,
         ), patch.object(module, 'publish_event', return_value=True) as publish:
             result = CliRunner().invoke(module.main, args, input=user_input)

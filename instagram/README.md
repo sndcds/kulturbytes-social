@@ -12,18 +12,17 @@ Im Repository-Hauptordner:
 
 ```bash
 uv sync --all-packages
-cd instagram
-uv run main.py --dry-run --limit 10
+uv run kulturbytes-social instagram --dry-run --limit 10
 ```
 
 Wähle beispielsweise `1` oder `1,3-5`. `all` wählt alle angebotenen Termine;
 eine leere Eingabe beendet die Auswahl. Die Vorschau lädt Kulturbytes-Daten
 und prüft, ob die Bildadresse JPEG-Daten liefert. Sie ruft keine Instagram-API auf.
 
-Direkte Auswahl, im Ordner `instagram/`:
+Direkte Auswahl, im Repository-Hauptordner:
 
 ```bash
-uv run main.py --event-uuid "EVENT_UUID" --date-identifier "202609101830"
+uv run kulturbytes-social instagram --event-uuid "EVENT_UUID" --date-identifier "202609101830"
 ```
 
 Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. Die Terminkennung kann
@@ -48,7 +47,7 @@ Advanced Access erforderlich sein. Die genauen Voraussetzungen beschreibt
 export INSTAGRAM_USER_ID="DEINE_NUMERISCHE_INSTAGRAM_KONTO_ID"
 export INSTAGRAM_ACCESS_TOKEN="DEIN_INSTAGRAM_ACCESS_TOKEN"
 export INSTAGRAM_LOGIN_TYPE="instagram"
-uv run main.py --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
+uv run kulturbytes-social instagram --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
 ```
 
 Vor jedem Beitrag erscheint eine Bestätigungsfrage. Ohne Zustimmung entstehen
@@ -83,12 +82,12 @@ OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
 den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
 `--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
 
-Im Ordner `instagram/`:
+Im Repository-Hauptordner:
 
 ```bash
-uv run main.py --credentials status
-uv run main.py --credentials set
-uv run main.py --credentials delete
+uv run kulturbytes-social instagram --credentials status
+uv run kulturbytes-social instagram --credentials set
+uv run kulturbytes-social instagram --credentials delete
 ```
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
@@ -112,10 +111,10 @@ OS-Backends: [Projektübersicht](../README.md#tokens-optional-im-os-keyring-spei
 
 ## Zugang ohne Veröffentlichung prüfen
 
-Im Ordner `instagram/`, nach dem Setzen der Zugangsdaten:
+Im Repository-Hauptordner, nach dem Setzen der Zugangsdaten:
 
 ```bash
-uv run main.py --check-auth
+uv run kulturbytes-social instagram --check-auth
 ```
 
 Beispiel einer erfolgreichen Prüfung (Exitcode 0):
@@ -158,8 +157,7 @@ Freigabe-, Datums-, Stadt- und Duplikatfilter gelten auch für die direkte Auswa
 `--limit` schließt einen direkt gewählten Termin nicht aus. Nicht gefundene oder
 gefilterte direkte Termine liefern einen Fehler-Exitcode.
 
-Alternativ funktionieren `uv run kulturbytes-instagram` im Plattformordner oder
-`uv run --package kulturbytes-instagram kulturbytes-instagram` im Hauptordner.
+Der einzige öffentliche CLI-Befehl ist `kulturbytes-social` mit dem Unterbefehl `instagram`.
 
 ## Bild und Beitragstext
 
@@ -194,9 +192,12 @@ beenden den Vorgang. Beschreibung des Ablaufs:
 
 Erst die bestätigte Medien-ID wird zusammen mit der `date_uuid` in
 `instagram_posts.sqlite3` gespeichert. Nutze eine eigene Datenbank für Instagram;
-relative Pfade beziehen sich auf das aktuelle Arbeitsverzeichnis. Ein Dry-Run darf
+im Checkout liegt sie fest unter `instagram/`, bei einer separaten Installation
+unter `$XDG_DATA_HOME/kulturbytes-social/` (Fallback: `~/.local/share/kulturbytes-social/`). Ein Dry-Run darf
 die Datei anlegen, speichert aber keine Veröffentlichung. Bewahre die Datenbank auf,
-damit bereits veröffentlichte Termine weiter erkannt werden.
+damit bereits veröffentlichte Termine weiter erkannt werden. `DATABASE_PATH` mit
+einem absoluten Pfad verwendet deine bestehende Datei; relative Werte beziehen
+sich auf das Standarddatenbankverzeichnis, nicht auf das Arbeitsverzeichnis.
 
 Bei einer ausdrücklich bestätigten Wiederveröffentlichung ersetzt der neue
 Instagram-Eintrag den bisherigen Datenbankeintrag; eine Historie wird nicht geführt.
@@ -214,6 +215,9 @@ uv run --all-packages python -m unittest discover -s tests -v
 
 Die Instagram-Tests verwenden simulierte HTTP-Antworten und temporäre Datenbanken.
 Sie veröffentlichen keine echten Beiträge.
+
+Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
+[Migration und Datenbankpfade](../README.md#migration).
 
 ## Lizenz
 

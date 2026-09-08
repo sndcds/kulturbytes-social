@@ -11,6 +11,7 @@ from urllib.parse import quote
 import click
 import httpx
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from test_publishers import FACEBOOK, MASTODON, EVENT, SUMMARY
 from test_instagram import instagram, EVENT as INSTAGRAM_EVENT
@@ -53,7 +54,7 @@ class AuthTests(unittest.TestCase):
         ), patch.object(module, 'init_database') as database, patch.object(
             module, 'run_publisher',
         ) as workflow, patch.object(module, 'publish_event') as publish:
-            result = CliRunner().invoke(module.main, args or ['--check-auth'])
+            result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + (args or ['--check-auth']))
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         database.assert_not_called()
         workflow.assert_not_called()
@@ -130,7 +131,7 @@ class AuthTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, '-c', f'import {module.__name__}'],
                                         capture_output=True, text=True, check=False)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                result = CliRunner().invoke(module.main, ['--help'])
+                result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_'), '--help'])
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertIn('--check-auth', result.output)
                 self.lookup.assert_not_called()
@@ -141,7 +142,7 @@ class AuthTests(unittest.TestCase):
                 with self.subTest(platform=module.__name__, option=option), patch.dict(os.environ, {}, clear=True), patch(
                     'httpx.Client',
                 ) as client, patch.object(module, 'init_database') as database:
-                    result = CliRunner().invoke(module.main, [option])
+                    result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_'), option])
                     self.assertEqual(result.exit_code, 1, result.output)
                     self.assertIn('fehl', result.output)
                     client.assert_not_called()
@@ -240,7 +241,7 @@ class AuthTests(unittest.TestCase):
                 with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, {}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
                     'kulturbytes_common.workflow.httpx.Client', return_value=client,
                 ):
-                    result = CliRunner().invoke(module.main, ['--dry-run'], input='1\n')
+                    result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_'), '--dry-run'], input='1\n')
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertIn('DRY RUN', result.output)
                 self.lookup.assert_not_called()

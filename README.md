@@ -22,6 +22,17 @@ Publisher das Paket in `common/` verwenden.
 
 ## Schnellstart
 
+Es gibt genau einen öffentlichen CLI-Befehl: `kulturbytes-social`.
+Die Plattformen werden als Click-Unterbefehle registriert:
+
+```bash
+uv run kulturbytes-social --help
+uv run kulturbytes-social facebook --help
+uv run kulturbytes-social mastodon --help
+uv run kulturbytes-social instagram --help
+```
+
+
 Öffne ein Terminal im Repository-Hauptordner und installiere die Abhängigkeiten:
 
 ```bash
@@ -61,12 +72,12 @@ Ein leerer Wert zählt als fehlender Token; entferne die Variable mit `unset`,
 wenn der gespeicherte Token verwendet werden soll. Hilfe und Dry-Run benötigen
 weder Tokens noch einen funktionierenden Keyring.
 
-Im jeweiligen Plattformordner:
+Im Repository-Hauptordner, hier am Beispiel Facebook:
 
 ```bash
-uv run main.py --credentials status
-uv run main.py --credentials set
-uv run main.py --credentials delete
+uv run kulturbytes-social facebook --credentials status
+uv run kulturbytes-social facebook --credentials set
+uv run kulturbytes-social facebook --credentials delete
 ```
 
 `status` zeigt nur vorhanden/nicht vorhanden nach derselben Quellenpriorität wie
@@ -120,10 +131,12 @@ verwaltet werden; eine Page-Token-Wiederherstellung ist derzeit nicht implementi
 
 ## Zugang prüfen
 
-Im jeweiligen Ordner `facebook/`, `mastodon/` oder `instagram/`:
+Im Repository-Hauptordner:
 
 ```bash
-uv run main.py --check-auth
+uv run kulturbytes-social facebook --check-auth
+uv run kulturbytes-social mastodon --check-auth
+uv run kulturbytes-social instagram --check-auth
 ```
 
 Der Check liest ausschließlich das konfigurierte Plattformkonto bzw. die Facebook-Seite.
@@ -140,36 +153,33 @@ passende Zugangsdaten und die Bestätigung pro Termin erforderlich.
 
 ## Termine auswählen und veröffentlichen
 
-Nach der Konfiguration startest du den gewünschten Publisher in seinem Ordner.
+Alle Publisher sind Unterbefehle von `kulturbytes-social`.
 Für Facebook, ausgehend vom Repository-Hauptordner:
 
 ```bash
-cd facebook
-uv run main.py --dry-run --limit 10
+uv run kulturbytes-social facebook --dry-run --limit 10
 ```
 
 Für Mastodon, ebenfalls ausgehend vom Repository-Hauptordner:
 
 ```bash
-cd mastodon
-uv run main.py --dry-run --limit 10
+uv run kulturbytes-social mastodon --dry-run --limit 10
 ```
 
 Für Instagram, ebenfalls ausgehend vom Repository-Hauptordner:
 
 ```bash
-cd instagram
-uv run main.py --dry-run --limit 10
+uv run kulturbytes-social instagram --dry-run --limit 10
 ```
 
 Die Liste enthält freigegebene Termine ab dem heutigen Datum, chronologisch
 sortiert. Bereits gespeicherte Veröffentlichungen werden ausgeblendet.
 Wähle die gewünschten Nummern aus, um ihre Vorschau zu sehen.
 
-Wenn du veröffentlichen möchtest, starte im jeweiligen Plattformordner:
+Wenn du veröffentlichen möchtest, starte beispielsweise für Facebook:
 
 ```bash
-uv run main.py --publish --limit 10
+uv run kulturbytes-social facebook --publish --limit 10
 ```
 
 Vor jedem Beitrag fragt das Programm nach einer Bestätigung. `--limit` begrenzt
@@ -188,16 +198,16 @@ Timer-Läufe.
 | `--include-published` | Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten | aus |
 | `--help` | Hilfe zu den Befehlen anzeigen | — |
 
-Alternativ zu `uv run main.py` funktionieren im jeweiligen Plattformordner
-`uv run kulturbytes-facebook`, `uv run kulturbytes-mastodon` und
-`uv run kulturbytes-instagram`.
+Nach Installation funktioniert `kulturbytes-social` auch außerhalb des Repositorys
+ohne `uv run`. Die Plattformpakete sind interne Backends und haben keine eigenen
+öffentlichen Executables.
 
 ## Einzelnen Termin direkt auswählen
 
-Im jeweiligen Plattformordner kannst du die nummerierte Auswahl überspringen:
+Im Repository-Hauptordner kannst du die nummerierte Auswahl überspringen:
 
 ```bash
-uv run main.py --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
+uv run kulturbytes-social facebook --publish --event-uuid "EVENT_UUID" --date-identifier "202609101830"
 ```
 
 Ersetze `EVENT_UUID` durch die Veranstaltungs-UUID. `--date-identifier` akzeptiert
@@ -227,20 +237,47 @@ und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; sie
 
 ## Lokale Daten
 
-Jede Plattform speichert erfolgreiche Veröffentlichungen in ihrer eigenen
-SQLite-Datenbank. Die Termin-ID (`date_uuid`) dient dazu, bekannte Termine beim
-nächsten Lauf auszublenden. Eine Vorschau kann die Datenbank anlegen, speichert
-aber keine Veröffentlichung.
+Jede Plattform behält ihre eigene SQLite-Datenbank und ihr bisheriges Schema.
+Im Checkout sind die Standardpfade fest am Repository verankert:
 
-Standardmäßig entstehen `facebook_posts.sqlite3`, `mastodon_posts.sqlite3` beziehungsweise
-`instagram_posts.sqlite3` im aktuellen Arbeitsverzeichnis. Behalte bestehende
-Datenbanken bei einem Umzug oder Update. Nutze das bisherige Arbeitsverzeichnis
-oder setze `DATABASE_PATH` auf einen absoluten Pfad. Verwende für alle
-Plattformen getrennte Datenbanken.
+- `facebook/facebook_posts.sqlite3`
+- `mastodon/mastodon_posts.sqlite3`
+- `instagram/instagram_posts.sqlite3`
 
-Virtuelle Umgebungen, Caches, `.env`-Dateien und lokale Datenbanken werden durch
-[`.gitignore`](.gitignore) aus Git ausgeschlossen. Die gemeinsame `uv.lock`
-gehört zum Repository und hält die Abhängigkeitsversionen fest.
+Bestehende Dateien an diesen Orten werden weiterverwendet. Bei einer separaten
+Installation außerhalb eines Checkouts liegen die Dateien unter
+`$XDG_DATA_HOME/kulturbytes-social/`, standardmäßig `~/.local/share/kulturbytes-social/`.
+Ein Arbeitsverzeichniswechsel ändert diese Pfade nicht. Verzeichnisse werden erst
+beim Initialisieren der Datenbank angelegt, nicht bei Hilfe oder Auth-Checks.
+
+`DATABASE_PATH` überschreibt den jeweiligen Pfad. Absolute Werte werden direkt
+verwendet; relative Werte beziehen sich auf das Standarddatenbankverzeichnis der
+Plattform. Niemals mehrere Plattformen auf dieselbe Datenbankdatei verweisen lassen.
+Dry-Runs können die Datei anlegen, schreiben aber keine Veröffentlichung.
+Erst nach bestätigtem Remote-Erfolg wird die `date_uuid` gespeichert; bestätigte
+Wiederveröffentlichungen ersetzen den bisherigen Eintrag.
+
+## Migration
+
+Die alten Plattform-Executables und `main.py`-Wrapper sind entfernt:
+
+| Alter Aufruf im Plattformordner | Neuer Aufruf im Repository-Hauptordner |
+|---|---|
+| `cd facebook` und `uv run main.py --publish` | `uv run kulturbytes-social facebook --publish` |
+| `cd mastodon` und `uv run main.py --publish` | `uv run kulturbytes-social mastodon --publish` |
+| `cd instagram` und `uv run main.py --publish` | `uv run kulturbytes-social instagram --publish` |
+
+Auch die bisherigen Executables `kulturbytes-facebook`, `kulturbytes-mastodon`
+und `kulturbytes-instagram` werden durch `kulturbytes-social PLATFORM` ersetzt.
+Führe nach dem Update `uv sync --all-packages` aus.
+
+Die bisherigen Standarddatenbanken in den Plattformordnern werden weiterbenutzt.
+Falls du bisher einen anderen Pfad oder ein anderes Arbeitsverzeichnis genutzt hast,
+setze **vor der nächsten Veröffentlichung** `DATABASE_PATH` auf den absoluten Pfad
+deiner bestehenden plattformspezifischen Datei. Dasselbe gilt beim Wechsel vom
+Checkout zu einer separaten Installation: Es gibt keine automatische Kopie oder
+Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennung erhalten.
+
 
 ## Hilfe bei Problemen
 
@@ -248,7 +285,7 @@ gehört zum Repository und hält die Abhängigkeitsversionen fest.
 |---|---|
 | `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
 | Beim Start fehlt eine Umgebungsvariable | Setze die Zugangsdaten im selben Terminal, in dem du den Publisher startest. |
-| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte alle vier Paketordner. |
+| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte das Root-Paket unter `src/` und alle vier internen Paketordner. |
 | Es stehen keine Termine zur Auswahl | Prüfe Stadtfilter und bereits veröffentlichte Termine. |
 | Die Veröffentlichung schlägt fehl | Lies die API-Fehlermeldung und die Hinweise für deine Plattform. |
 
@@ -257,11 +294,17 @@ und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
 
 ## Entwicklung
 
-Die vier Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
+Die Root-CLI unter `src/kulturbytes_social/cli.py` registriert nur Befehle.
+Plattformlogik bleibt in den drei Backend-Paketen; `common/` enthält die gemeinsamen
+Workflows und Helfer. Neue Publisher werden als Unterbefehle ergänzt, beispielsweise
+`kulturbytes-social bluesky`, ohne zusätzliche öffentliche Executables.
+
+Das Root-Anwendungspaket und die vier internen Pakete bilden einen `uv`-Workspace mit einer gemeinsamen `uv.lock`.
 Das Paket `kulturbytes-common` wird lokal eingebunden. Änderungen an gemeinsamen
 Funktionen wirken auf alle Publisher.
 
 ```text
+src/kulturbytes_social/cli.py   Root-Click-Gruppe
 common/src/kulturbytes_common/
   events.py       API-Abfragen und Veranstaltungsinformationen
   media.py        Bildadressen und Bilddownloads

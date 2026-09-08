@@ -6,6 +6,7 @@ import click
 import httpx
 import keyring.errors
 from click.testing import CliRunner
+from kulturbytes_social.cli import cli
 
 from kulturbytes_common import credentials as secrets
 from test_publishers import FACEBOOK, MASTODON
@@ -33,7 +34,7 @@ class CredentialTests(unittest.TestCase):
 
     def invoke(self, module, args, user_input='', expected_exit=0):
         with patch.object(module, 'init_database') as database, patch.object(module, 'run_publisher') as workflow:
-            result = CliRunner().invoke(module.main, args, input=user_input)
+            result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         self.assertNotIn(TOKEN, result.output)
         database.assert_not_called()

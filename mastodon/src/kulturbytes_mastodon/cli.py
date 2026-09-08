@@ -6,7 +6,6 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import click
@@ -14,6 +13,7 @@ import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
+from kulturbytes_common.database import get_database_path
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -64,15 +64,11 @@ def check_auth(config: MastodonConfig) -> None:
     click.echo(redact(f"✓ Konto: @{acct}", config.access_token))
 
 
-DATABASE_PATH = Path(
-    os.getenv(
-        "DATABASE_PATH",
-        "mastodon_posts.sqlite3",
-    )
-)
+DATABASE_PATH = get_database_path("mastodon")
 
 
 def init_database() -> sqlite3.Connection:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
 
     conn.execute(
@@ -471,7 +467,7 @@ def publish_event(
     return True
 
 
-@click.command()
+@click.command("mastodon", help="Kulturbytes-Termine für Mastodon auswählen, prüfen und veröffentlichen.")
 @credential_options("Mastodon")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
@@ -523,7 +519,7 @@ def publish_event(
     default=None,
     help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
-def main(
+def mastodon_command(
     check_auth_only: bool,
     dry_run: bool,
     limit: int,
@@ -559,7 +555,3 @@ def main(
         event_uuid=event_uuid,
         date_identifier=date_identifier,
     )
-
-
-if __name__ == "__main__":
-    main()

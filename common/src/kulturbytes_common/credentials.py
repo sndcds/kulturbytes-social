@@ -120,8 +120,8 @@ def credential_options(platform: str) -> Callable:
         @wraps(callback)
         def wrapped(*args: Any, credentials: str | None, credential: str | None, **kwargs: Any) -> Any:
             if credentials is not None:
-                if kwargs.get('check_auth_only') or kwargs.get('dry_run') is False:
-                    raise click.UsageError('--credentials kann nicht mit --publish oder --check-auth kombiniert werden.')
+                if kwargs.get('check_auth_only') or kwargs.get('resolve_page_token') or kwargs.get('dry_run') is False:
+                    raise click.UsageError('--credentials kann nicht mit --publish, --check-auth oder --resolve-page-token kombiniert werden.')
                 return manage_credentials(platform, credentials, credential)
             if credential is not None:
                 raise click.UsageError('--credential benötigt --credentials.')

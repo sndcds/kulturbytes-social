@@ -37,7 +37,7 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `FACEBOOK_PAGE_ID` | ID der Zielseite | für `--publish` und `--check-auth` erforderlich |
-| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page Access Token für die Zielseite | für `--publish` und `--check-auth` erforderlich |
+| `FACEBOOK_PAGE_ACCESS_TOKEN` | Page Access Token für die Zielseite | alternativ aus Keyring oder User Token ableitbar |
 | `FACEBOOK_GRAPH_API_VERSION` | Verwendete Graph-API-Version | `v26.0` |
 | `DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
 
@@ -76,15 +76,14 @@ Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
 vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgegeben.
 Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht die Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
-mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
+mit `--publish`, `--check-auth` oder `--resolve-page-token` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
 
 `--credential user` verwaltet den User Access Token; ohne Auswahl fragt `set`/`delete`
 nach `page` oder `user`. Service: `kulturbytes-social/facebook`; Benutzernamen:
 `page-access-token` und `user-access-token`. Umgebungsvariablen:
 `FACEBOOK_PAGE_ACCESS_TOKEN` und `FACEBOOK_USER_ACCESS_TOKEN`. Veröffentlichen
-benötigt weiterhin einen Page Token. Es gibt noch keine automatische Ableitung
-eines Page Tokens aus dem User Token. `FACEBOOK_PAGE_ID` bleibt eine Umgebungsvariable.
+verwendet einen validierten Page Token, der bei Bedarf aus dem User Token abgeleitet wird. `FACEBOOK_PAGE_ID` bleibt eine Umgebungsvariable.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
@@ -117,7 +116,7 @@ Tokens werden niemals angezeigt, auch wenn die API sie zurückgibt.
 `--check-auth` hat Vorrang vor `--publish`, `--dry-run` und Auswahloptionen.
 Es werden keine Kulturbytes-Termine geladen, keine Bilder oder Mediencontainer
 erzeugt und keine Beiträge oder Datenbankeinträge geschrieben. Der Check verwendet
-nur `GET /{version}/{page_id}?fields=id,name`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
+`GET /{version}/{page_id}?fields=id,name` und bei Wiederherstellung zusätzlich `/me/accounts`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
 aber nicht sämtliche Veröffentlichungsrechte. Siehe [Meta Pages API](https://www.postman.com/meta/facebook/documentation/r56bjfd/facebook-api).
 
 Die zurückgegebene Seiten-ID muss mit `FACEBOOK_PAGE_ID` übereinstimmen.
@@ -232,3 +231,43 @@ Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 ## Lizenz
 
 [AGPL-3.0](../LICENSE)
+
+## Page Token wiederherstellen
+
+```bash
+uv run kulturbytes-social facebook --resolve-page-token
+```
+
+Ein User Access Token gehört einem Facebook-Nutzer und erlaubt die Abfrage seiner
+verwalteten Seiten. Der daraus abgeleitete Page Access Token gehört der konfigurierten
+Seite und wird zum Veröffentlichen verwendet. `FACEBOOK_PAGE_ID` bleibt erforderlich.
+
+`--check-auth` und `--publish` prüfen zuerst den Page Token aus der Environment-Variable,
+sonst aus dem OS-Keyring. Fehlt er oder meldet Meta Code 190 (einschließlich Ablaufcode
+463), folgt der User Token aus `FACEBOOK_USER_ACCESS_TOKEN`, sonst aus dem Keyring.
+Eine gesetzte, auch leere Environment-Variable unterdrückt den jeweiligen Keyring-Wert.
+Ein nicht verfügbarer optionaler Keyring verhindert die Wiederherstellung aus Environment
+oder interaktiver Eingabe nicht. Berechtigungsfehler (10/200), Netzwerkfehler und
+ungültige Validierungsantworten brechen ab.
+
+Im TTY wird die Wiederherstellung zunächst bestätigt (Standard: Nein). Fehlt ein User
+Token, folgt eine verdeckte Eingabe. Ohne TTY gibt es keine Rückfragen; ohne vorhandenen
+User Token endet der Befehl mit einem Fehler. `--resolve-page-token` fordert die Ableitung
+gezielt an und überspringt die anfängliche Page-Token-Prüfung und Wiederherstellungsfrage.
+Wie `--check-auth` hat diese Option Vorrang vor Veröffentlichung und Eventauswahl.
+
+Die Abfrage `GET /{version}/me/accounts?fields=id,name,access_token` wählt ausschließlich
+die konfigurierte Seiten-ID, auch auf Folgeseiten. Folgeseiten werden über geprüfte Cursor
+am festen Graph-Endpunkt abgefragt; fremde URLs werden nicht aufgerufen. Der neue Token
+muss anschließend `GET /{version}/{page_id}?fields=id,name` erfolgreich bestehen.
+Erst danach kann im TTY das Speichern im bestehenden OS-Keyring bestätigt werden
+(Standard: Ja). Eine fehlgeschlagene Wiederherstellung verändert keine gespeicherten Tokens.
+Environment-Variablen werden nicht verändert; ein dort abgelaufener Token bleibt beim
+nächsten Aufruf vorrangig, bis die Umgebung angepasst wird. Der aktuelle Aufruf verwendet
+den neuen Token direkt im Speicher.
+
+Vor `--publish` erfolgt diese Prüfung vor Event-, Bild- und Datenbankzugriffen.
+Die Bestätigung jedes Beitrags bleibt erforderlich. Dry Runs benötigen keine Tokens.
+Tokens werden niemals ausgegeben oder in SQLite, `.env` oder Dateien gespeichert;
+Auth-Fehler zeigen HTTP-Status und gegebenenfalls Meta-Code statt roher Antwortkörper.
+Dies ist kein OAuth-Browserlogin und keine Erneuerung eines User Tokens.

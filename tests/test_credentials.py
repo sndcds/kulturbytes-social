@@ -16,7 +16,8 @@ TOKEN = 'private-test-token'
 # Mocked OS backend identity, without initializing any real desktop service.
 OS_BACKEND = type('Keyring', (), {'__module__': 'keyring.backends.SecretService'})()
 CASES = [(FACEBOOK, secrets.FACEBOOK_PAGE, 'page'), (FACEBOOK, secrets.FACEBOOK_USER, 'user'),
-         (instagram, secrets.INSTAGRAM, 'access'), (MASTODON, secrets.MASTODON, 'access')]
+         (instagram, secrets.INSTAGRAM, 'access'), (MASTODON, secrets.MASTODON, 'access'),
+         (FACEBOOK, secrets.META_SYSTEM_USER, 'meta'), (instagram, secrets.META_SYSTEM_USER, 'meta')]
 
 
 class CredentialTests(unittest.TestCase):
@@ -102,8 +103,8 @@ class CredentialTests(unittest.TestCase):
                 self.set_password.assert_called_once_with(credential.service, credential.username, TOKEN)
                 self.assertTrue(prompt.call_args.kwargs['hide_input'])
         self.set_password.reset_mock()
-        self.invoke(FACEBOOK, ['--credentials', 'set'], 'user\n' + TOKEN + '\n')
-        self.set_password.assert_called_once_with(secrets.FACEBOOK_USER.service, 'user-access-token', TOKEN)
+        self.invoke(FACEBOOK, ['--credentials', 'set'], TOKEN + '\n')
+        self.set_password.assert_called_once_with(secrets.META_SYSTEM_USER.service, 'system-user-access-token', TOKEN)
         self.set_password.side_effect = RuntimeError(TOKEN)
         self.invoke(instagram, ['--credentials', 'set'], TOKEN + '\n', expected_exit=1)
 
@@ -153,7 +154,7 @@ class CredentialTests(unittest.TestCase):
                         self.backend.reset_mock()
                         self.backend.side_effect = RuntimeError(TOKEN) if env_token else None
                         self.get_password.return_value = TOKEN
-                        env = {'FACEBOOK_PAGE_ID': '123', 'INSTAGRAM_USER_ID': '123'}
+                        env = {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'INSTAGRAM_USER_ID': '123'}
                         if env_token:
                             env[credential.env_name] = TOKEN
                         requests = []

@@ -29,7 +29,7 @@ class RecoveryTests(unittest.TestCase):
         client = httpx.Client(transport=httpx.MockTransport(handle))
         def get_secret(service, username):
             return (stored or {}).get(username)
-        with patch.dict(os.environ, {'FACEBOOK_PAGE_ID': '123', **(env or {})}, clear=True), \
+        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', **(env or {})}, clear=True), \
              patch('kulturbytes_common.credentials.get_secret', side_effect=get_secret) as get, \
              patch.object(auth, 'set_secret') as save, \
              patch.object(auth, 'interactive', return_value=tty), \
@@ -166,7 +166,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(request.headers['Authorization'], f'Bearer {NEW}')
             return httpx.Response(200, json={'id': 'post-1'})
         with tempfile.TemporaryDirectory() as directory, \
-             patch.dict(os.environ, {'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_PAGE_ACCESS_TOKEN': OLD,
+             patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_PAGE_ACCESS_TOKEN': OLD,
                                      'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
              patch.object(auth, 'interactive', return_value=False), \
              patch.object(auth.httpx, 'Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handle), **kw)), \
@@ -182,7 +182,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertNotIn(token, result.output)
 
     def test_transport_and_keyring_failure_do_not_expose_secrets(self):
-        with patch.dict(os.environ, {'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
+        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
              patch('kulturbytes_common.credentials.get_secret', side_effect=auth.click.ClickException('OS-Keyring ist nicht verfügbar.')), \
              patch.object(auth, 'interactive', return_value=False):
             def fail(request):

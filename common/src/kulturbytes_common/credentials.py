@@ -18,12 +18,14 @@ class Credential:
     label: str
 
 
+META_SYSTEM_USER = Credential('META_SYSTEM_USER_ACCESS_TOKEN', 'kulturbytes-social/meta',
+                              'system-user-access-token', 'Meta System User Access Token')
 FACEBOOK_PAGE = Credential('FACEBOOK_PAGE_ACCESS_TOKEN', 'kulturbytes-social/facebook', 'page-access-token', 'Page Access Token')
 FACEBOOK_USER = Credential('FACEBOOK_USER_ACCESS_TOKEN', 'kulturbytes-social/facebook', 'user-access-token', 'User Access Token')
 INSTAGRAM = Credential('INSTAGRAM_ACCESS_TOKEN', 'kulturbytes-social/instagram', 'access-token', 'Access Token')
 MASTODON = Credential('MASTODON_ACCESS_TOKEN', 'kulturbytes-social/mastodon', 'access-token', 'Access Token')
-PLATFORMS = {'Facebook': {'page': FACEBOOK_PAGE, 'user': FACEBOOK_USER},
-             'Instagram': {'access': INSTAGRAM}, 'Mastodon': {'access': MASTODON}}
+PLATFORMS = {'Facebook': {'meta': META_SYSTEM_USER, 'page': FACEBOOK_PAGE, 'user': FACEBOOK_USER},
+             'Instagram': {'meta': META_SYSTEM_USER, 'access': INSTAGRAM}, 'Mastodon': {'access': MASTODON}}
 KEYRING_ERROR = ('OS-Keyring ist nicht verfügbar. Verwende eine Environment-Variable '
                  'oder eine unterstützte Secret-Service-Sitzung bzw. einen OS-Schlüsselbund.')
 
@@ -86,19 +88,30 @@ def resolve_credential(credential: Credential) -> str | None:
     return resolve_secret(env_name=credential.env_name, service=credential.service, username=credential.username)
 
 
+def optional_credential(credential: Credential) -> str | None:
+    """Allow legacy env credentials when the optional shared keyring is unavailable."""
+    try:
+        return resolve_credential(credential)
+    except click.ClickException:
+        return None
+
+
+def warn_legacy(platform: str) -> None:
+    click.echo(f'{platform}: Legacy-Zugang ist veraltet; bitte auf META_SYSTEM_USER_ACCESS_TOKEN migrieren.', err=True)
+
+
 def manage_credentials(platform: str, action: str, selected: str | None) -> None:
     choices = PLATFORMS[platform]
+    selected = selected or ('meta' if 'meta' in choices else next(iter(choices)))
+    if 'meta' in choices and selected != 'meta':
+        warn_legacy(platform)
+    credential = choices[selected]
     if action == 'status':
         click.echo(platform)
-        for credential in ([choices[selected]] if selected else choices.values()):
-            present = resolve_credential(credential) is not None
-            click.echo(f"{'✓' if present else '✗'} {credential.label} "
-                       f"{'vorhanden' if present else 'nicht vorhanden'}")
+        present = resolve_credential(credential) is not None
+        click.echo(f"{'✓' if present else '✗'} {credential.label} "
+                   f"{'vorhanden' if present else 'nicht vorhanden'}")
         return
-    if selected is None:
-        selected = (click.prompt('Token auswählen (page: Page Access Token, user: User Access Token)',
-                                 type=click.Choice(list(choices))) if len(choices) > 1 else next(iter(choices)))
-    credential = choices[selected]
     if action == 'set':
         value = click.prompt(f'{platform} {credential.label}', hide_input=True).strip()
         if not value:

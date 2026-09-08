@@ -64,80 +64,87 @@ Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-au
 Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. `.env`-Dateien werden nicht automatisch geladen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
 
+## Gemeinsamer Meta-Zugang
+
+```text
+META_SYSTEM_USER_ACCESS_TOKEN ─┬─ Facebook  (FACEBOOK_PAGE_ID)
+                              └─ Instagram (INSTAGRAM_USER_ID)
+MASTODON_ACCESS_TOKEN ─────────── Mastodon
+```
+
+Für Facebook und Instagram verwaltest du einen Meta System User Access Token.
+Der System User muss in deinem Meta Business Portfolio bereits Zugriff auf die
+Facebook-Seite, das verknüpfte Instagram-Professional-Konto und die verwendete App
+haben. Die erforderlichen Veröffentlichungsrechte müssen dem Token gewährt sein.
+IDs bleiben separate, nicht geheime Environment-Konfiguration. Der Publisher
+richtet keine System User oder Assets ein und implementiert keinen Browser-OAuth-Login.
+
+Facebook ermittelt intern den Page Token der exakten Seiten-ID, validiert ihn und
+verwendet ihn ausschließlich im Speicher des aktuellen Aufrufs. Instagram verwendet
+den gemeinsamen Token direkt über die API mit Facebook Login (`graph.facebook.com`).
+Bei gemeinsamem Token ist dies der Standard; ein explizites
+`INSTAGRAM_LOGIN_TYPE=instagram` wird mit einer Migrationsmeldung abgewiesen.
+Beide Publisher validieren ihr Ziel vor Events, Bildern, Datenbankzugriffen und
+Veröffentlichung. `--check-auth` erstellt keine Inhalte. Ein erfolgreicher Lesetest
+beweist nicht sämtliche Veröffentlichungsrechte.
+
 ## Tokens optional im OS-Keyring speichern
 
-Umgebungsvariablen haben Vorrang vor dem OS-Keyring. Ist eine Tokenvariable gesetzt,
-wird der Keyring für diesen Token nicht angesprochen, auch bei leerem Wert.
-Ein leerer Wert zählt als fehlender Token; entferne die Variable mit `unset`,
-wenn der gespeicherte Token verwendet werden soll. Hilfe und Dry-Run benötigen
-weder Tokens noch einen funktionierenden Keyring.
-
-Im Repository-Hauptordner, hier am Beispiel Facebook:
+Beide Meta-Unterbefehle verwalten standardmäßig **denselben** Eintrag:
 
 ```bash
-uv run kulturbytes-social facebook --credentials status
 uv run kulturbytes-social facebook --credentials set
+uv run kulturbytes-social instagram --credentials status
 uv run kulturbytes-social facebook --credentials delete
 ```
 
-`status` zeigt nur vorhanden/nicht vorhanden nach derselben Quellenpriorität wie
-`--publish` und `--check-auth`. `set` fragt den Token verdeckt ab und speichert ihn
-im OS-Keyring; `delete` löscht nur den Keyring-Eintrag nach Bestätigung. Gesetzte
-Umgebungsvariablen werden weder verändert noch gelöscht. Bei Facebook wählst du
-`page` oder `user`, alternativ mit `--credential page` bzw. `--credential user`.
-Es gibt keine Option zur Übergabe des Tokenwerts auf der Kommandozeile.
+`set` fragt den Token verdeckt ab. `status` zeigt nur vorhanden/nicht vorhanden;
+`delete` verlangt Bestätigung. Löschen wirkt für Facebook und Instagram gemeinsam,
+ändert aber keine Environment-Variable. `--credential meta` wählt diesen Eintrag
+explizit. Tokenwerte können nicht als CLI-Argument übergeben werden.
 
-Die Verwaltung startet keine Event-Abfrage, Veröffentlichung oder Datenbankoperation.
-Auswahloptionen werden dabei ignoriert; Kombinationen mit `--publish` oder
-`--check-auth` werden als Bedienfehler abgewiesen. Die Paketbefehle unterstützen
-dieselben Optionen. Es werden weder Tokenwerte noch Präfixe, Längen oder Hashes angezeigt.
+| Verwendung | Environment | Keyring-Service | Benutzername |
+|---|---|---|---|
+| Facebook und Instagram | `META_SYSTEM_USER_ACCESS_TOKEN` | `kulturbytes-social/meta` | `system-user-access-token` |
+| Mastodon | `MASTODON_ACCESS_TOKEN` | `kulturbytes-social/mastodon` | `access-token` |
 
-Auf Ubuntu-Desktops kann eine entsperrte Secret-Service-/GNOME-Keyring-Sitzung
-verwendet werden. Optionale Systempakete:
+Environment hat Vorrang vor Keyring. Eine explizit leere Variable unterdrückt den
+zugehörigen Keyring-Lookup und zählt als fehlender Token. Zum Verwenden des Keyrings
+die Variable mit `unset` entfernen. Hilfe und Dry Runs greifen nicht auf Tokens zu.
+Die Credential-Verwaltung lädt keine Events und öffnet keine Datenbank; sie darf
+nicht mit `--publish`, `--check-auth` oder `--resolve-page-token` kombiniert werden.
 
-```bash
-sudo apt install gnome-keyring libsecret-tools
-```
+Keyring ist optional; Environment-Zugang funktioniert ohne Desktop-Sitzung.
+Unter Ubuntu kann eine entsperrte Secret-Service-Sitzung nötig sein, beispielsweise
+mit `gnome-keyring` und `libsecret-tools`. Unterstützt werden Secret Service,
+KWallet, macOS Keychain und Windows Credential Manager; Klartext-Dateibackends werden
+abgewiesen. `uv sync --all-packages` installiert die Python-Abhängigkeit. Tokens
+werden weder ausgegeben noch in SQLite, `.env`, temporären Dateien oder Logs gespeichert.
 
-Die Python-Abhängigkeit `keyring` liegt in `kulturbytes-common` und wird mit
-`uv sync --all-packages` installiert (hinzugefügt mit
-`uv add --package kulturbytes-common keyring`). Die Anwendung nutzt Python
-`keyring`, nicht `secret-tool`. Unterstützt werden die OS-Backends Secret Service,
-KWallet, macOS Keychain und Windows Credential Locker; Datei-/Klartext-Backends
-und deaktivierte Backends werden abgewiesen. Details zu den Systemdiensten:
-[Python-keyring-Dokumentation](https://keyring.readthedocs.io/en/latest/).
+### Migration bestehender Meta-Zugänge
 
-Ist der benötigte Keyring gesperrt, nicht erreichbar oder ungeeignet, erscheint
-`OS-Keyring ist nicht verfügbar` mit einem Hinweis auf Umgebungsvariablen.
-Rohe Backend-Fehler werden nicht ausgegeben. Die Anwendung schreibt keine Tokens
-in SQLite, `.env`, temporäre Dateien oder Shell-Startdateien.
+Die Reihenfolge ist eindeutig: gemeinsamer Meta-Token aus Environment, sonst aus
+Keyring; nur wenn keiner verfügbar ist, folgen die bisherigen Plattform-Credentials.
+Ein ungültiger gemeinsamer Token führt zum Fehler und niemals zum Wechsel auf einen
+Legacy-Token. Ein nicht verfügbarer optionaler Meta-Keyring verhindert vorhandene
+Legacy-Environment-Zugänge nicht. Eine leere Meta-Environment-Variable erlaubt den
+Legacy-Fallback, unterdrückt aber den gemeinsamen Keyring-Eintrag.
 
-Für CI, Container und Server bleiben Umgebungsvariablen vollständig unterstützt.
-Systemd-Dienste können vorzugsweise extern provisionierte Systemd-Credentials
-(`systemd-creds`) verwenden; deren Übergabe an die Token-Umgebungsvariablen muss
-der Dienststart übernehmen. Diese Anwendung richtet keine Systemd-Credentials ein.
-Ein Desktop-Keyring ist für den Betrieb mit Umgebungsvariablen nicht erforderlich.
+Facebook unterstützt vorübergehend `FACEBOOK_PAGE_ACCESS_TOKEN` / `FACEBOOK_USER_ACCESS_TOKEN`
+und deren alte Keyring-Einträge samt Recovery. Instagram unterstützt vorübergehend
+`INSTAGRAM_ACCESS_TOKEN` und seinen bisherigen Keyring-Eintrag. Ohne gemeinsamen
+Token bleibt Instagram Login der bisherige Standard; `INSTAGRAM_LOGIN_TYPE=facebook`
+funktioniert weiterhin mit dem passenden Legacy-Token. Diese Pfade geben einen
+Deprecation-Hinweis aus. Bestehende Tokens werden weder automatisch migriert noch gelöscht.
 
-| Plattform | Keyring-Service | Benutzername |
-|---|---|---|
-| Facebook | `kulturbytes-social/facebook` | `page-access-token`, `user-access-token` |
-| Instagram | `kulturbytes-social/instagram` | `access-token` |
-| Mastodon | `kulturbytes-social/mastodon` | `access-token` |
-
-Seiten-/Konto-IDs, Instanzadresse, Login-Typ und API-Version bleiben Konfiguration
-in Umgebungsvariablen. Die Namen gelten pro Plattform, nicht pro Konto; beim
-Kontowechsel muss auch der gespeicherte Token passen. Facebook-User-Tokens können
-zur Wiederherstellung eines fehlenden oder abgelaufenen Page Tokens verwendet werden.
-`uv run kulturbytes-social facebook --resolve-page-token` leitet den Token gezielt ab
-und validiert ihn, ohne Events zu laden oder Beiträge zu erstellen. `--check-auth`
-und `--publish` versuchen die Wiederherstellung bei fehlenden Tokens oder Meta-Code 190.
-Reihenfolge: Page Token aus Environment, sonst Keyring; danach User Token aus
-Environment, sonst Keyring, sonst verdeckte Eingabe im TTY. Auch leere Environment-
-Variablen unterdrücken den jeweiligen Keyring-Lookup. Im TTY wird eine Wiederherstellung
-bestätigt; ohne TTY sind nur vorhandene User Tokens nutzbar. Ein validierter neuer
-Page Token kann nach separater Bestätigung im OS-Keyring gespeichert werden.
-Tokens werden nie ausgegeben. Dies ist kein OAuth-Browserlogin und erneuert keine
-User Tokens. Details: [Facebook](facebook/README.md).
+Zum Umstellen den System User mit Asset-Zugriff konfigurieren, den gemeinsamen
+Token einmal verdeckt speichern (oder `META_SYSTEM_USER_ACCESS_TOKEN` extern bereitstellen),
+bei Instagram `INSTAGRAM_LOGIN_TYPE=facebook` setzen bzw. die alte Login-Variable entfernen
+und beide `--check-auth`-Befehle ausführen. Veraltete Einträge können danach gezielt
+mit `facebook --credentials delete --credential page` bzw. `user` und
+`instagram --credentials delete --credential access` gelöscht werden.
+Die Legacy-Optionen bleiben in dieser Übergangsversion verfügbar; ihre Entfernung
+wird separat angekündigt und erfolgt frühestens in einer kommenden inkompatiblen Version.
 
 ## Zugang prüfen
 

@@ -11,8 +11,10 @@ from urllib.parse import urlsplit
 import click
 import httpx
 
-from kulturbytes_common.auth import check_auth_request, redact
-from kulturbytes_common.credentials import INSTAGRAM, credential_options, resolve_credential
+from kulturbytes_common.auth import check_auth_request, redact, response_payload
+from kulturbytes_common.credentials import (
+    INSTAGRAM, META_SYSTEM_USER, credential_options, optional_credential, resolve_credential, warn_legacy,
+)
 from kulturbytes_common.database import get_database_path
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
@@ -38,11 +40,16 @@ class InstagramConfig:
 def load_config() -> InstagramConfig:
     """Credentials are needed for publishing and auth checks; dry run works without them."""
     user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
-    token = resolve_credential(INSTAGRAM)
-    login = os.getenv("INSTAGRAM_LOGIN_TYPE", "instagram").strip().lower()
+    system_token = optional_credential(META_SYSTEM_USER)
+    token = system_token or resolve_credential(INSTAGRAM)
+    login = os.getenv("INSTAGRAM_LOGIN_TYPE", "facebook" if system_token else "instagram").strip().lower()
+    if system_token and login == "instagram":
+        raise click.ClickException("META_SYSTEM_USER_ACCESS_TOKEN benötigt INSTAGRAM_LOGIN_TYPE=facebook; Instagram Login ist nur mit Legacy-Token möglich.")
+    if not system_token and token:
+        warn_legacy("Instagram")
     version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v26.0").strip()
     if not user_id or not token:
-        raise click.ClickException("INSTAGRAM_USER_ID und INSTAGRAM_ACCESS_TOKEN fehlen.")
+        raise click.ClickException("INSTAGRAM_USER_ID und/oder Meta-Zugang fehlen (META_SYSTEM_USER_ACCESS_TOKEN; Legacy: INSTAGRAM_ACCESS_TOKEN).")
     if not user_id.isascii() or not user_id.isdigit():
         raise click.ClickException("INSTAGRAM_USER_ID muss die numerische Instagram-Konto-ID sein.")
     hosts = {"instagram": "graph.instagram.com", "facebook": "graph.facebook.com"}
@@ -156,24 +163,15 @@ def instagram_request(
     client: httpx.Client, config: InstagramConfig, method: str, path: str,
     *, data: dict | None = None, params: dict | None = None,
 ) -> dict:
-    response = client.request(
-        method, f"{config.base_url}/{path}",
-        headers={"Authorization": f"Bearer {config.access_token}"},
-        data=data, params=params, follow_redirects=False,
-    )
-    if response.is_error:
-        click.echo(
-            f"Instagram API error (HTTP {response.status_code}): "
-            + redact(response.text, config.access_token), err=True,
-        )
-    response.raise_for_status()
     try:
-        payload = response.json()
-    except ValueError as exc:
-        raise RuntimeError("Instagram hat keine gültige JSON-Antwort geliefert.") from exc
-    if not isinstance(payload, dict) or payload.get("error"):
-        raise RuntimeError("Instagram: " + redact(str(payload), config.access_token))
-    return payload
+        response = client.request(
+            method, f"{config.base_url}/{path}",
+            headers={"Authorization": f"Bearer {config.access_token}"},
+            data=data, params=params, follow_redirects=False,
+        )
+    except httpx.RequestError:
+        raise click.ClickException("Instagram: Netzwerkfehler bei der Veröffentlichung.") from None
+    return response_payload(response, "Instagram", config.access_token)
 
 
 def require_id(payload: dict) -> str:
@@ -231,7 +229,8 @@ def publish_instagram_photo(
     return require_id(published)
 
 
-def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool) -> bool:
+def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
+                  *, config: InstagramConfig | None = None) -> bool:
     caption = build_instagram_caption(event)
     click.echo("\n" + "=" * 80)
     click.echo(caption)
@@ -245,12 +244,18 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
     if not click.confirm("Diesen Termin jetzt auf Instagram veröffentlichen?", default=False):
         click.echo("Übersprungen.")
         return False
-    config = load_config()
+    config = config or authenticate()
     media_id = publish_instagram_photo(client, config, image_url, caption)
     # Persist immediately after confirmation from Meta, without optional API reads.
     remember_post(conn, event, media_id)
     click.secho(f"Instagram-Post erstellt: {media_id}", fg="green")
     return True
+
+
+def authenticate() -> InstagramConfig:
+    config = load_config()
+    check_auth(config)
+    return config
 
 
 @click.command("instagram", help="Kulturbytes-Termine für Instagram auswählen, prüfen und veröffentlichen.")
@@ -265,12 +270,15 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
 def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
          event_uuid: str | None, date_identifier: str | None) -> None:
     if check_auth_only:
-        check_auth(load_config())
+        authenticate()
         return
-    if not dry_run:
-        load_config()
+    config = authenticate() if not dry_run else None
+
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
+        return publish_event(client, conn, event, dry_run=dry_run, config=config)
+
     run_publisher(
-        conn=init_database(), publish_event=publish_event,
+        conn=init_database(), publish_event=publish_with_config,
         user_agent="Kulturbytes-Instagram-Publisher/1.0", dry_run=dry_run,
         limit=limit, include_published=include_published, city=city,
         event_uuid=event_uuid, date_identifier=date_identifier,

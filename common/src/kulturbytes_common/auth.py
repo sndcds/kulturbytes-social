@@ -41,7 +41,11 @@ def api_error(response: httpx.Response, payload: object, platform: str, token: s
                    else f"{platform} Access Token ist ungültig oder abgelaufen.")
     elif platform == "Mastodon" and response.status_code in {401, 403}:
         message = "Mastodon-Zugangsdaten ungültig oder abgelaufen."
-    error_type = RemoteRejected if (400 <= response.status_code < 500 and response.status_code != 408) or (200 <= response.status_code < 300 and error) else click.ClickException
+    definitive = response.status_code in {400, 401, 403, 404, 405, 413, 415, 422, 429} or (
+        200 <= response.status_code < 300 and bool(error)
+    )
+    # A polling GET failure says nothing about the preceding mutation's outcome.
+    error_type = RemoteRejected if response.request.method == 'POST' and definitive else click.ClickException
     return error_type(
         f"{message} HTTP {response.status_code}: " + redact(response.text, token)
     )
@@ -79,6 +83,7 @@ def remote_url(value: object, token: str) -> str | None:
         parsed = urlsplit(value)
         if (parsed.scheme not in ('http', 'https') or not parsed.hostname
                 or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment or len(value) > 2000
                 or any(c.isspace() or ord(c) < 32 for c in value)):
             return None
         parsed.port

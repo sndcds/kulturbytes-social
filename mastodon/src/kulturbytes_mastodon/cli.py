@@ -98,6 +98,7 @@ def remember_post(
     event: dict,
     mastodon_status_id: str,
     mastodon_status_url: str | None,
+    *, commit: bool = True,
 ) -> None:
     event_date = event["date"]
 
@@ -133,7 +134,8 @@ def remember_post(
         ),
     )
 
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 DEFAULT_STATUS_LIMIT = 500
@@ -326,7 +328,7 @@ def upload_mastodon_media(
         "/api/v2/media"
     )
 
-    begin_remote_mutation()
+    begin_remote_mutation("mastodon_media")
     response = client.post(
         url,
         headers={
@@ -388,7 +390,7 @@ def publish_mastodon_status(
     if media_id:
         data["media_ids[]"] = media_id
 
-    begin_remote_mutation()
+    begin_remote_mutation("mastodon_status")
     response = client.post(
         f"{config.base_url}/api/v1/statuses",
         headers={
@@ -442,10 +444,12 @@ def publish_event(
 
         return False
 
+    config = config or load_config()
     mastodon_status_id, mastodon_status_url = execute_publication(
         conn, "mastodon", event,
         lambda: publish_mastodon_status(client, event, message=message, config=config),
-        lambda remote_id, remote_url: remember_post(conn, event, remote_id, remote_url), allow_repeat=allow_repeat,
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, remote_url, commit=False), allow_repeat=allow_repeat,
+        message=message, target_ref=config.base_url,
     )
     click.secho(f"Mastodon-Post erstellt: {mastodon_status_id}", fg="green")
     click.echo(f"Gespeichert: {event['date']['uuid']} -> {mastodon_status_id}")

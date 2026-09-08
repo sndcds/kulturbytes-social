@@ -86,6 +86,7 @@ def remember_post(
     conn: sqlite3.Connection,
     event: dict,
     facebook_post_id: str,
+    *, commit: bool = True,
 ) -> None:
     event_date = event["date"]
 
@@ -118,7 +119,8 @@ def remember_post(
         ),
     )
 
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def build_message(
@@ -278,13 +280,13 @@ def build_message(
 
 
 def print_event_preview(
-    event: dict,
+    event: dict, message: str | None = None,
 ) -> None:
     click.echo()
     click.echo("=" * 80)
 
     click.echo(
-        build_message(event)
+        build_message(event) if message is None else message
     )
 
     image_url = get_image_url(
@@ -303,7 +305,7 @@ def print_event_preview(
 def publish_facebook_photo(
     client: httpx.Client,
     event: dict,
-    *, config: FacebookConfig | None = None,
+    *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
     (
@@ -321,15 +323,13 @@ def publish_facebook_photo(
         f"{config.page_id}/photos"
     )
 
-    begin_remote_mutation()
+    begin_remote_mutation("facebook_photo")
     response = client.post(
         url,
         headers={"Authorization": f"Bearer {config.access_token}"},
         follow_redirects=False,
         data={
-            "caption": build_message(
-                event
-            ),
+            "caption": build_message(event) if message is None else message,
         },
         files={
             "source": (
@@ -360,7 +360,7 @@ def publish_facebook_photo(
 def publish_text_post(
     client: httpx.Client,
     event: dict,
-    *, config: FacebookConfig | None = None,
+    *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
     url = (
@@ -369,15 +369,13 @@ def publish_text_post(
         f"{config.page_id}/feed"
     )
 
-    begin_remote_mutation()
+    begin_remote_mutation("facebook_feed")
     response = client.post(
         url,
         headers={"Authorization": f"Bearer {config.access_token}"},
         follow_redirects=False,
         data={
-            "message": build_message(
-                event
-            ),
+            "message": build_message(event) if message is None else message,
         },
     )
 
@@ -404,9 +402,8 @@ def publish_event(
     dry_run: bool,
     *, config: FacebookConfig | None = None, allow_repeat: bool = False,
 ) -> bool:
-    print_event_preview(
-        event
-    )
+    message = build_message(event)
+    print_event_preview(event, message)
 
     if dry_run:
         click.secho(
@@ -426,13 +423,16 @@ def publish_event(
 
         return False
 
+    config = config or load_config()
+
     def publish() -> tuple[str, None]:
         publisher = publish_facebook_photo if get_image_url(event) else publish_text_post
-        return publisher(client, event, config=config), None
+        return publisher(client, event, config=config, message=message), None
 
     facebook_post_id, _ = execute_publication(
         conn, "facebook", event, publish,
-        lambda remote_id, remote_url: remember_post(conn, event, remote_id), allow_repeat=allow_repeat,
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, commit=False), allow_repeat=allow_repeat,
+        message=message, target_ref=config.page_id,
     )
     click.secho(f"Facebook-Post erstellt: {facebook_post_id}", fg="green")
     click.echo(f"Gespeichert: {event['date']['uuid']} -> {facebook_post_id}")

@@ -86,7 +86,7 @@ def init_database() -> sqlite3.Connection:
     return conn
 
 
-def remember_post(conn: sqlite3.Connection, event: dict, media_id: str) -> None:
+def remember_post(conn: sqlite3.Connection, event: dict, media_id: str, *, commit: bool = True) -> None:
     event_date = event["date"]
     # An explicitly confirmed repeat publication replaces the stored remote ID.
     conn.execute("""
@@ -100,7 +100,8 @@ def remember_post(conn: sqlite3.Connection, event: dict, media_id: str) -> None:
             start_time=excluded.start_time, published_at=CURRENT_TIMESTAMP
     """, (event_date["uuid"], event["uuid"], media_id, event["title"],
           event_date["start_date"], event_date.get("start_time")))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def build_instagram_caption(event: dict) -> str:
@@ -175,7 +176,6 @@ def instagram_request(
         response = safe_get(client, f"{config.base_url}/{path}",
                             headers={"Authorization": f"Bearer {config.access_token}"}, params=params)
         return response_payload(response, "Instagram", config.access_token)
-    begin_remote_mutation()
     try:
         response = client.request(
             method, f"{config.base_url}/{path}",
@@ -226,10 +226,12 @@ def wait_for_container(client: httpx.Client, config: InstagramConfig, container_
 def publish_instagram_photo(
     client: httpx.Client, config: InstagramConfig, image_url: str, caption: str,
 ) -> str:
+    begin_remote_mutation("instagram_container")
     container = instagram_request(client, config, "POST", f"{config.user_id}/media",
                                   data={"image_url": image_url, "caption": caption})
     container_id = require_id(container, config.access_token)
     wait_for_container(client, config, container_id)
+    begin_remote_mutation("instagram_publish")
     published = instagram_request(client, config, "POST", f"{config.user_id}/media_publish",
                                   data={"creation_id": container_id})
     return require_id(published, config.access_token)
@@ -254,7 +256,8 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
     media_id, _ = execute_publication(
         conn, "instagram", event,
         lambda: (publish_instagram_photo(client, config, image_url, caption), None),
-        lambda remote_id, remote_url: remember_post(conn, event, remote_id), allow_repeat=allow_repeat,
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, commit=False), allow_repeat=allow_repeat,
+        message=caption, target_ref=config.user_id,
     )
     click.secho(f"Instagram-Post erstellt: {media_id}", fg="green")
     return True

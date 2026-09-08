@@ -52,9 +52,9 @@ def resolve(platform: str, attempt_uuid: str, outcome: str, remote_id: str | Non
 
         def finalize(event: dict, post_id: str, post_url: str | None) -> None:
             if platform == 'mastodon':
-                module.remember_post(conn, event, post_id, post_url)
+                module.remember_post(conn, event, post_id, post_url, commit=False)
             else:
-                module.remember_post(conn, event, post_id)
+                module.remember_post(conn, event, post_id, commit=False)
 
         resolve_attempt(conn, attempt_uuid, outcome, finalize, remote_id=remote_id, remote_url=remote_url)
         click.echo('Versuch aufgelöst; keine Remote-Anfrage ausgeführt.')

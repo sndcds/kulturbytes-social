@@ -176,13 +176,17 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assert_unpublished()
 
     def test_api_failures_do_not_record_success_and_redact_token(self):
-        for path in ['/v26.0/123/media', '/v26.0/456', '/v26.0/123/media_publish']:
+        for index, path in enumerate(['/v26.0/123/media', '/v26.0/456', '/v26.0/123/media_publish']):
+            self.database = Path(self.directory.name) / f'rejected-api-{index}.db'
             with self.subTest(path=path):
                 self.requests.clear()
                 self.overrides = {path: lambda r: httpx.Response(400, json={'error': {'message': 'secret-token denied'}})}
                 result = self.run_cli(DIRECT + ['--publish'], 'y\n', expected_exit=1)
                 self.assertNotIn('secret-token', result.output)
-                self.assertIn('[REDACTED]', result.output)
+                if path == '/v26.0/456':
+                    self.assertIn('Phase=instagram_container', result.output)
+                else:
+                    self.assertIn('[REDACTED]', result.output)
                 with sqlite3.connect(self.database) as conn:
                     self.assertFalse(already_published(conn, 'date-1'))
 

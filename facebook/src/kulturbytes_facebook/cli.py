@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -13,6 +12,7 @@ from kulturbytes_common.auth import redact, response_payload
 from kulturbytes_facebook.auth import authenticate_page
 from kulturbytes_common.credentials import FACEBOOK_PAGE, credential_options, resolve_credential
 from kulturbytes_common.database import get_database_path
+from kulturbytes_common.environment import get_config
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -29,8 +29,8 @@ class FacebookConfig:
 
 
 def load_settings() -> tuple[str, str]:
-    page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip()
-    version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v26.0").strip()
+    page_id = get_config("FACEBOOK_PAGE_ID", "").strip()
+    version = get_config("FACEBOOK_GRAPH_API_VERSION", "v26.0").strip()
     if not page_id:
         raise click.ClickException("FACEBOOK_PAGE_ID fehlt.")
     if not page_id.isascii() or not page_id.isdigit():

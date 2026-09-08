@@ -1,6 +1,7 @@
 """Optional OS credential storage; environment overrides never access the keyring."""
 
 import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
@@ -8,6 +9,8 @@ from typing import Any
 
 import click
 import keyring
+
+from kulturbytes_common.environment import ResolvedValue, get_dotenv_value, set_dotenv_value, secure_env_file
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,10 @@ KEYRING_ERROR = ('OS-Keyring ist nicht verfügbar. Verwende eine Environment-Var
                  'oder eine unterstützte Secret-Service-Sitzung bzw. einen OS-Schlüsselbund.')
 
 
+class KeyringUnavailable(click.ClickException):
+    pass
+
+
 def _require_os_backend() -> None:
     """Exclude plaintext/file plugins and disabled backends before reading or writing."""
     def supported(backend: object) -> bool:
@@ -50,7 +57,7 @@ def get_secret(service: str, username: str) -> str | None:
         return keyring.get_password(service, username)
     except Exception:
         # Backend initialization and D-Bus errors can contain secrets.
-        raise click.ClickException(KEYRING_ERROR) from None
+        raise KeyringUnavailable(KEYRING_ERROR) from None
 
 
 def set_secret(service: str, username: str, value: str) -> None:
@@ -58,7 +65,7 @@ def set_secret(service: str, username: str, value: str) -> None:
         _require_os_backend()
         keyring.set_password(service, username, value)
     except Exception:
-        raise click.ClickException(KEYRING_ERROR) from None
+        raise KeyringUnavailable(KEYRING_ERROR) from None
 
 
 def delete_secret(service: str, username: str) -> bool:
@@ -71,29 +78,64 @@ def delete_secret(service: str, username: str) -> bool:
         # Only suppress a missing entry; permission failures are still errors.
         if get_secret(service, username) is None:
             return False
-        raise click.ClickException(KEYRING_ERROR) from None
+        raise KeyringUnavailable(KEYRING_ERROR) from None
     except Exception:
-        raise click.ClickException(KEYRING_ERROR) from None
+        raise KeyringUnavailable(KEYRING_ERROR) from None
+
+
+def resolve_credential_source(credential: Credential) -> ResolvedValue:
+    if credential.env_name != MASTODON.env_name:
+        value = get_dotenv_value(credential.env_name)
+        if value and value.strip():
+            return ResolvedValue(value.strip(), 'dotenv')
+    if credential.env_name in os.environ:
+        return ResolvedValue(os.environ[credential.env_name].strip() or None, 'environment')
+    value = get_secret(credential.service, credential.username)
+    return ResolvedValue((value.strip() or None) if value is not None else None, 'keyring')
 
 
 def resolve_secret(*, env_name: str, service: str, username: str) -> str | None:
-    if env_name in os.environ:
-        # Even an explicitly empty override suppresses keyring access.
-        return os.environ[env_name].strip() or None
-    value = get_secret(service, username)
-    return (value.strip() or None) if value is not None else None
+    return resolve_credential(Credential(env_name, service, username, ''))
 
 
 def resolve_credential(credential: Credential) -> str | None:
-    return resolve_secret(env_name=credential.env_name, service=credential.service, username=credential.username)
+    return resolve_credential_source(credential).value
 
 
 def optional_credential(credential: Credential) -> str | None:
-    """Allow legacy env credentials when the optional shared keyring is unavailable."""
     try:
         return resolve_credential(credential)
-    except click.ClickException:
+    except KeyringUnavailable:
         return None
+
+
+def interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def meta_candidate(legacy: tuple[Credential, ...], *, allow_prompt: bool = True) -> ResolvedValue | None:
+    try:
+        candidate = resolve_credential_source(META_SYSTEM_USER)
+    except KeyringUnavailable:
+        candidate = ResolvedValue(None)
+    if candidate.value:
+        return candidate
+    if any(optional_credential(credential) for credential in legacy):
+        return None
+    if allow_prompt and interactive():
+        value = click.prompt('Meta System User Access Token', hide_input=True).strip()
+        if value:
+            return ResolvedValue(value, 'prompt')
+    raise click.ClickException('META_SYSTEM_USER_ACCESS_TOKEN fehlt in .env und es ist keine nicht-interaktive Credential-Quelle verfügbar.')
+
+
+def persist_validated_meta(candidate: ResolvedValue) -> None:
+    """Call only after the platform has successfully validated its configured target."""
+    if candidate.value and candidate.source != 'dotenv':
+        set_dotenv_value(META_SYSTEM_USER.env_name, candidate.value)
+        click.echo('✓ Validierter Meta-Zugang in .env gespeichert.')
+    elif candidate.value:
+        secure_env_file()
 
 
 def warn_legacy(platform: str) -> None:
@@ -108,9 +150,12 @@ def manage_credentials(platform: str, action: str, selected: str | None) -> None
     credential = choices[selected]
     if action == 'status':
         click.echo(platform)
-        present = resolve_credential(credential) is not None
+        resolved = resolve_credential_source(credential)
+        present = resolved.value is not None
         click.echo(f"{'✓' if present else '✗'} {credential.label} "
                    f"{'vorhanden' if present else 'nicht vorhanden'}")
+        if present:
+            click.echo('Quelle: ' + {'dotenv': '.env', 'environment': 'Environment', 'keyring': 'OS-Keyring'}[resolved.source])
         return
     if action == 'set':
         value = click.prompt(f'{platform} {credential.label}', hide_input=True).strip()

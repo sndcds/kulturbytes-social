@@ -5,6 +5,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +17,7 @@ from kulturbytes_social.cli import cli
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class UnifiedCliTests(unittest.TestCase):
+class UnifiedCliTests(IsolatedEnvironmentTestCase):
     def test_root_help_and_unknown_command(self):
         result = CliRunner().invoke(cli, ['--help'])
         self.assertEqual(result.exit_code, 0, result.output)

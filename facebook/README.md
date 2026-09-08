@@ -30,6 +30,33 @@ Termine; eine leere Eingabe beendet die Auswahl. Es wird nichts veröffentlicht.
 
 Alle weiteren Startbefehle auf dieser Seite führst du im Repository-Hauptordner aus.
 
+## Primäre lokale `.env`
+
+Meta-Konfiguration folgt **`.env > Prozess-Environment > OS-Keyring > verdeckte TTY-Eingabe**.
+Im Checkout gilt immer `<repo>/.env`, unabhängig vom Arbeitsverzeichnis. Installiert
+außerhalb des Checkouts: `$XDG_CONFIG_HOME/kulturbytes-social/.env`, mit Fallback
+`~/.config/kulturbytes-social/.env` (relative XDG-Werte werden ignoriert).
+Die gemeinsame Datei enthält `META_SYSTEM_USER_ACCESS_TOKEN`, `FACEBOOK_PAGE_ID`
+und `INSTAGRAM_USER_ID`; beide Publisher verwenden denselben primären Token.
+
+`--check-auth` und `--publish` validieren zuerst das exakte Ziel. Erst danach werden
+primäre Tokens aus Environment, Keyring oder versteckter Eingabe automatisch in `.env`
+gespeichert; der aktuelle Aufruf arbeitet mit dem validierten Wert im Speicher weiter.
+Validierungsfehler lassen Datei, Keyring und Veröffentlichungsdatenbank unverändert.
+Schreibfehler brechen vor Veröffentlichung ab. Die Originalquelle wird nicht verändert.
+Fehlende Tokens werden nur im TTY abgefragt; ohne TTY wird klar abgebrochen. Dry Runs
+und Hilfe starten keinen Bootstrap. Ein ungültiger `.env`-Token muss korrigiert oder
+entfernt werden; es gibt keinen stillen Wechsel zu einem anderen Token.
+
+Leere `.env`-Tokenwerte erlauben Fallback; leere Prozess-Tokenvariablen unterdrücken
+weiterhin den Keyring für denselben Token. IDs und Meta-API-Einstellungen werden ebenfalls
+aus `.env` vor Environment gelesen. Bestehende Kommentare und fremde Variablen bleiben
+beim atomaren Update erhalten. POSIX-Rechte: `0600`, auch für bereits validierte Dateien.
+Temporäre Dateien werden aufgeräumt; Symlinks werden abgewiesen. **Never commit .env.**
+Abgeleitete Page-Tokens und Legacy-Tokens werden nie als primärer Meta-Token persistiert.
+CI/systemd können weiter Environment verwenden, benötigen nach Validierung aber einen
+beschreibbaren Konfigurationspfad. Details: [Projektübersicht](../README.md#lokale-env-als-primäre-meta-konfiguration).
+
 ## Konfiguration
 
 Die Einstellungen werden aus den Umgebungsvariablen gelesen:
@@ -41,7 +68,8 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 | `FACEBOOK_GRAPH_API_VERSION` | Verwendete Graph-API-Version | `v26.0` |
 | `DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
 
-Zugangsdaten werden erst für `--publish` und `--check-auth` geladen.
+Zugangsdaten werden erst für `--publish` und `--check-auth` geladen; validierte
+primäre Fallback-Tokens werden dabei in `.env` übernommen.
 `--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
 Die Vorschau lädt Veranstaltungsdaten aus der Kulturbytes-API.
 
@@ -53,15 +81,15 @@ export FACEBOOK_PAGE_ID="DEINE_NUMERISCHE_SEITEN_ID"
 uv run kulturbytes-social facebook --credentials set
 ```
 
-Die `export`-Befehle gelten für die aktuelle Terminal-Sitzung. Eine `.env`-Datei
-wird vom Programm nicht automatisch geladen. Bewahre echte Tokens außerhalb
+Die `export`-Befehle gelten für die aktuelle Terminal-Sitzung. Die deterministische `.env`
+hat für Meta-Konfiguration Vorrang vor der Prozessumgebung. Bewahre echte Tokens außerhalb
 der versionierten Dateien auf; `.env` und lokale Datenbanken sind bereits in
 [`.gitignore`](../.gitignore) ausgeschlossen.
 
 ## Optionaler OS-Keyring
 
-Tokens werden zuerst aus der jeweiligen Umgebungsvariable, sonst aus dem
-OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
+Meta-Tokens werden zuerst aus der deterministischen `.env`, dann aus der
+Umgebung und schließlich aus dem OS-Keyring geladen. Eine vorhandene, aber leere Variable verhindert ebenfalls
 den Keyring-Zugriff und zählt als fehlend. Hilfe und Dry-Run lesen keine Tokens.
 `--publish` und `--check-auth` verwenden beide dieselbe Auflösung.
 
@@ -75,7 +103,7 @@ uv run kulturbytes-social facebook --credentials delete --credential meta
 
 Beim Speichern wird der Token verdeckt abgefragt. Status zeigt ausschließlich
 vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgegeben.
-Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht die Umgebung.
+Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish`, `--check-auth` oder `--resolve-page-token` sind nicht zulässig; Auswahloptionen werden ignoriert.
 Die Paketbefehle akzeptieren dieselben Optionen.
@@ -83,13 +111,14 @@ Die Paketbefehle akzeptieren dieselben Optionen.
 Standardmäßig verwaltet dieser Befehl den gemeinsamen Meta-Token unter Service
 `kulturbytes-social/meta`, Benutzername `system-user-access-token`. Instagram nutzt
 denselben Eintrag; das Löschen betrifft beide Publisher. `FACEBOOK_PAGE_ID` bleibt
-eine Environment-Variable. Legacy-Selektoren `page` und `user` bleiben vorübergehend
+Konfiguration in `.env` oder Environment. Legacy-Selektoren `page` und `user` bleiben vorübergehend
 mit Deprecation-Hinweis verfügbar; ohne Selektor wird immer `meta` verwendet.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
 `keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
-`secret-tool` auf und verwendet keine Klartext-Dateiablage. Backend-Fehler werden
+`secret-tool` auf und akzeptiert keine Klartext-Keyring-Backends. Die primäre `.env`
+wird separat mit restriktiven Dateirechten verwaltet. Backend-Fehler werden
 als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
 kaputtem Keyring. Server können extern bereitgestellte Systemd-Credentials bevorzugen;
 eine automatische Provisionierung ist nicht enthalten. Details und unterstützte
@@ -235,7 +264,7 @@ Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 
 ## Gemeinsamer Meta System User Token
 
-Der normale Zugang benötigt nur `META_SYSTEM_USER_ACCESS_TOKEN` aus Environment
+Der normale Zugang benötigt nur `META_SYSTEM_USER_ACCESS_TOKEN` aus `.env`, Environment
 oder dem gemeinsamen Keyring. Der System User muss im Meta Business Portfolio der
 App und der Zielseite mit passenden Rechten zugeordnet sein (unter anderem
 `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`; je nach Asset-Zugriff

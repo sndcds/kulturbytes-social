@@ -1,5 +1,6 @@
 import os
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from unittest.mock import patch
 
 import click
@@ -20,7 +21,7 @@ CASES = [(FACEBOOK, secrets.FACEBOOK_PAGE, 'page'), (FACEBOOK, secrets.FACEBOOK_
          (FACEBOOK, secrets.META_SYSTEM_USER, 'meta'), (instagram, secrets.META_SYSTEM_USER, 'meta')]
 
 
-class CredentialTests(unittest.TestCase):
+class CredentialTests(IsolatedEnvironmentTestCase):
     def setUp(self):
         backend = patch.object(secrets.keyring, 'get_keyring', return_value=OS_BACKEND)
         self.backend = backend.start()

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -16,7 +17,7 @@ from kulturbytes_common.events import build_hashtags, get_event_url
 from test_publishers import EVENT, SUMMARY, MASTODON as mastodon, ENV
 
 
-class MastodonLimitTests(unittest.TestCase):
+class MastodonLimitTests(IsolatedEnvironmentTestCase):
     def test_instance_limit_and_fallback(self):
         payloads = [({'configuration': {'statuses': {'max_characters': 750}}}, 750),
                     ({'configuration': {'statuses': {'max_characters': 500}}}, 500)]

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
@@ -25,7 +26,7 @@ ENV = {
 PLATFORMS = [FACEBOOK, MASTODON, instagram]
 
 
-class AuthTests(unittest.TestCase):
+class AuthTests(IsolatedEnvironmentTestCase):
     def setUp(self):
         self.secret_lookup = patch('kulturbytes_common.credentials.get_secret', return_value=None)
         self.lookup = self.secret_lookup.start()

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from dotenv_support import IsolatedEnvironmentTestCase
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -17,7 +18,7 @@ PLATFORMS = [FACEBOOK, MASTODON, instagram]
 DIRECT = ['--event-uuid', 'event-1', '--date-identifier', 'date-1']
 
 
-class DateIdentityTests(unittest.TestCase):
+class DateIdentityTests(IsolatedEnvironmentTestCase):
     def records(self, database: Path) -> list[tuple]:
         with sqlite3.connect(database) as conn:
             return conn.execute('SELECT * FROM published_events ORDER BY date_uuid').fetchall()

@@ -41,7 +41,8 @@ Der Standardmodus zeigt nur eine Vorschau.
 
 ## Konfiguration
 
-Alle Publisher lesen ihre Einstellungen aus Umgebungsvariablen. Die
+Alle Publisher lesen ihre Einstellungen aus Umgebungsvariablen; Tokens können
+alternativ im OS-Keyring liegen. Die
 plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 
 - [Facebook konfigurieren](facebook/README.md#konfiguration)
@@ -51,6 +52,71 @@ plattformabhängigen Variablen und ihre Standardwerte stehen in den Anleitungen:
 Alle drei Publisher benötigen Zugangsdaten nur für `--publish` und `--check-auth`.
 Import, Vorschau (`--dry-run`) und Befehlshilfe (`--help`) funktionieren ohne Tokens. `.env`-Dateien werden nicht automatisch geladen.
 Echte Tokens gehören außerhalb der versionierten Dateien aufbewahrt.
+
+## Tokens optional im OS-Keyring speichern
+
+Umgebungsvariablen haben Vorrang vor dem OS-Keyring. Ist eine Tokenvariable gesetzt,
+wird der Keyring für diesen Token nicht angesprochen, auch bei leerem Wert.
+Ein leerer Wert zählt als fehlender Token; entferne die Variable mit `unset`,
+wenn der gespeicherte Token verwendet werden soll. Hilfe und Dry-Run benötigen
+weder Tokens noch einen funktionierenden Keyring.
+
+Im jeweiligen Plattformordner:
+
+```bash
+uv run main.py --credentials status
+uv run main.py --credentials set
+uv run main.py --credentials delete
+```
+
+`status` zeigt nur vorhanden/nicht vorhanden nach derselben Quellenpriorität wie
+`--publish` und `--check-auth`. `set` fragt den Token verdeckt ab und speichert ihn
+im OS-Keyring; `delete` löscht nur den Keyring-Eintrag nach Bestätigung. Gesetzte
+Umgebungsvariablen werden weder verändert noch gelöscht. Bei Facebook wählst du
+`page` oder `user`, alternativ mit `--credential page` bzw. `--credential user`.
+Es gibt keine Option zur Übergabe des Tokenwerts auf der Kommandozeile.
+
+Die Verwaltung startet keine Event-Abfrage, Veröffentlichung oder Datenbankoperation.
+Auswahloptionen werden dabei ignoriert; Kombinationen mit `--publish` oder
+`--check-auth` werden als Bedienfehler abgewiesen. Die Paketbefehle unterstützen
+dieselben Optionen. Es werden weder Tokenwerte noch Präfixe, Längen oder Hashes angezeigt.
+
+Auf Ubuntu-Desktops kann eine entsperrte Secret-Service-/GNOME-Keyring-Sitzung
+verwendet werden. Optionale Systempakete:
+
+```bash
+sudo apt install gnome-keyring libsecret-tools
+```
+
+Die Python-Abhängigkeit `keyring` liegt in `kulturbytes-common` und wird mit
+`uv sync --all-packages` installiert (hinzugefügt mit
+`uv add --package kulturbytes-common keyring`). Die Anwendung nutzt Python
+`keyring`, nicht `secret-tool`. Unterstützt werden die OS-Backends Secret Service,
+KWallet, macOS Keychain und Windows Credential Locker; Datei-/Klartext-Backends
+und deaktivierte Backends werden abgewiesen. Details zu den Systemdiensten:
+[Python-keyring-Dokumentation](https://keyring.readthedocs.io/en/latest/).
+
+Ist der benötigte Keyring gesperrt, nicht erreichbar oder ungeeignet, erscheint
+`OS-Keyring ist nicht verfügbar` mit einem Hinweis auf Umgebungsvariablen.
+Rohe Backend-Fehler werden nicht ausgegeben. Die Anwendung schreibt keine Tokens
+in SQLite, `.env`, temporäre Dateien oder Shell-Startdateien.
+
+Für CI, Container und Server bleiben Umgebungsvariablen vollständig unterstützt.
+Systemd-Dienste können vorzugsweise extern provisionierte Systemd-Credentials
+(`systemd-creds`) verwenden; deren Übergabe an die Token-Umgebungsvariablen muss
+der Dienststart übernehmen. Diese Anwendung richtet keine Systemd-Credentials ein.
+Ein Desktop-Keyring ist für den Betrieb mit Umgebungsvariablen nicht erforderlich.
+
+| Plattform | Keyring-Service | Benutzername |
+|---|---|---|
+| Facebook | `kulturbytes-social/facebook` | `page-access-token`, `user-access-token` |
+| Instagram | `kulturbytes-social/instagram` | `access-token` |
+| Mastodon | `kulturbytes-social/mastodon` | `access-token` |
+
+Seiten-/Konto-IDs, Instanzadresse, Login-Typ und API-Version bleiben Konfiguration
+in Umgebungsvariablen. Die Namen gelten pro Plattform, nicht pro Konto; beim
+Kontowechsel muss auch der gespeicherte Token passen. Facebook-User-Tokens können
+verwaltet werden; eine Page-Token-Wiederherstellung ist derzeit nicht implementiert.
 
 ## Zugang prüfen
 

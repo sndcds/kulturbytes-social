@@ -13,6 +13,7 @@ import click
 import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
+from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -44,7 +45,7 @@ def load_base_url() -> str:
 
 
 def load_config() -> MastodonConfig:
-    token = os.getenv("MASTODON_ACCESS_TOKEN", "").strip()
+    token = resolve_credential(MASTODON)
     if not token:
         raise click.ClickException("MASTODON_ACCESS_TOKEN fehlt.")
     return MastodonConfig(load_base_url(), token)
@@ -471,6 +472,7 @@ def publish_event(
 
 
 @click.command()
+@credential_options("Mastodon")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",

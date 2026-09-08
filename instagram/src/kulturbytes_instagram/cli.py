@@ -13,6 +13,7 @@ import click
 import httpx
 
 from kulturbytes_common.auth import check_auth_request, redact
+from kulturbytes_common.credentials import INSTAGRAM, credential_options, resolve_credential
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -37,7 +38,7 @@ class InstagramConfig:
 def load_config() -> InstagramConfig:
     """Credentials are needed for publishing and auth checks; dry run works without them."""
     user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
-    token = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
+    token = resolve_credential(INSTAGRAM)
     login = os.getenv("INSTAGRAM_LOGIN_TYPE", "instagram").strip().lower()
     version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v26.0").strip()
     if not user_id or not token:
@@ -252,6 +253,7 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
 
 
 @click.command()
+@credential_options("Instagram")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option("--dry-run/--publish", default=True, help="Vorschau (Standard) oder nach Bestätigung veröffentlichen.")
 @click.option("--limit", type=click.IntRange(min=0), default=50, show_default=True, help="Termine in der Auswahl; 0 zeigt alle.")

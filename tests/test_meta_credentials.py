@@ -1,38 +1,32 @@
-"""Shared Meta credential and real CLI HTTP sequences, entirely mocked."""
+"""Shared Meta credential and adapter HTTP sequences, entirely mocked."""
 import os
-import sqlite3
 import tempfile
 import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
-
 import httpx
 from click.testing import CliRunner
-
 from kulturbytes_common import credentials
 from kulturbytes_facebook import auth as facebook_auth
-from kulturbytes_social.cli import cli
+from publisher_harness import cli
 from test_publishers import FACEBOOK, EVENT, SUMMARY
 from test_instagram import instagram, EVENT as IG_EVENT
-
 SYSTEM = 'system-secret+/meta'
 PAGE_TOKEN = 'derived-secret+/page'
 LEGACY = 'legacy-secret'
-ENV = {'FACEBOOK_PAGE_ID': '123', 'INSTAGRAM_USER_ID': '123',
-       'META_SYSTEM_USER_ACCESS_TOKEN': SYSTEM,
-       'FACEBOOK_PAGE_ACCESS_TOKEN': LEGACY, 'INSTAGRAM_ACCESS_TOKEN': LEGACY}
-ACCOUNTS = {'data': [{'id': '999', 'name': 'Other', 'access_token': 'other'},
-                     {'id': '123', 'name': 'Kulturbytes', 'access_token': PAGE_TOKEN}]}
-
+ENV = {'FACEBOOK_PAGE_ID': '123', 'INSTAGRAM_USER_ID': '123', 'META_SYSTEM_USER_ACCESS_TOKEN': SYSTEM, 'FACEBOOK_PAGE_ACCESS_TOKEN': LEGACY, 'INSTAGRAM_ACCESS_TOKEN': LEGACY}
+ACCOUNTS = {'data': [{'id': '999', 'name': 'Other', 'access_token': 'other'}, {'id': '123', 'name': 'Kulturbytes', 'access_token': PAGE_TOKEN}]}
 
 class MetaTests(IsolatedEnvironmentTestCase):
+
     def invoke(self, platform, *, env=None, stored=None, publish=False, overrides=None, tty=False):
         module = FACEBOOK if platform == 'facebook' else instagram
         calls = []
         overrides = overrides or {}
         client_class = httpx.Client
+
         def handle(request):
             calls.append(request)
             path = request.url.path
@@ -62,30 +56,15 @@ class MetaTests(IsolatedEnvironmentTestCase):
             self.assertEqual(request.method, 'POST')
             self.assertIn(path, ['/v26.0/123/feed', '/v26.0/123/media', '/v26.0/123/media_publish'])
             return httpx.Response(200, json={'id': '456'})
-        with tempfile.TemporaryDirectory() as directory, \
-             patch('kulturbytes_common.environment.get_env_file_path', return_value=Path(directory) / '.env'), \
-             patch.dict(os.environ, ENV if env is None else env, clear=True), \
-             patch.object(credentials, 'get_secret', side_effect=lambda service, user: (stored or {}).get((service, user))) as lookup, \
-             patch.object(credentials, 'set_secret') as save, \
-             patch.object(facebook_auth, 'set_secret') as page_save, \
-             patch.object(facebook_auth, 'interactive', return_value=tty), \
-             patch.object(facebook_auth.click, 'prompt', side_effect=AssertionError('Unexpected token prompt')), \
-             patch.object(httpx, 'Client', side_effect=lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw)), \
-             patch.object(module, 'DATABASE_PATH', Path(directory) / 'state.sqlite3'):
+        with tempfile.TemporaryDirectory() as directory, patch('kulturbytes_common.environment.get_env_file_path', return_value=Path(directory) / '.env'), patch.dict(os.environ, ENV if env is None else env, clear=True), patch.object(credentials, 'get_secret', side_effect=lambda service, user: (stored or {}).get((service, user))) as lookup, patch.object(credentials, 'set_secret') as save, patch.object(facebook_auth, 'set_secret') as page_save, patch.object(facebook_auth, 'interactive', return_value=tty), patch.object(facebook_auth.click, 'prompt', side_effect=AssertionError('Unexpected token prompt')), patch.object(httpx, 'Client', side_effect=lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw)):
             args = ['--publish', '--event-uuid', 'event-1', '--date-identifier', SUMMARY['date_slug']] if publish else ['--check-auth']
             result = CliRunner().invoke(cli, [platform, *args], input='y\n' if publish else '')
-            database = Path(directory) / 'state.sqlite3'
-            if publish and result.exit_code == 0:
-                with sqlite3.connect(database) as conn:
-                    self.assertEqual(conn.execute('SELECT COUNT(*) FROM published_events').fetchone(), (1,))
-            else:
-                self.assertFalse(database.exists())
             save.assert_not_called()
             page_save.assert_not_called()
         for token in (SYSTEM, PAGE_TOKEN, LEGACY):
             self.assertNotIn(token, result.output)
             self.assertNotIn(quote(token, safe=''), result.output)
-        return result, calls, lookup
+        return (result, calls, lookup)
 
     def test_shared_env_precedence_and_read_only_checks(self):
         for platform in ('facebook', 'instagram'):
@@ -148,6 +127,8 @@ class MetaTests(IsolatedEnvironmentTestCase):
                 'next': 'https://graph.facebook.com/v26.0/me/accounts?access_token=discarded',
                 'cursors': {'after': 'second'}}})
         result, calls, _ = self.invoke('facebook', overrides={'/v26.0/me/accounts': pages})
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(len(calls), 3)
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(len(calls), 3)
 

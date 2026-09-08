@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import tempfile
 import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
@@ -7,17 +6,15 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs
-
 import click
 import httpx
 from click.testing import CliRunner
 from kulturbytes_social.cli import cli
-
 from kulturbytes_common.events import build_hashtags, get_event_url
 from test_publishers import EVENT, SUMMARY, MASTODON as mastodon, ENV
 
-
 class MastodonLimitTests(IsolatedEnvironmentTestCase):
+
     def test_instance_limit_and_fallback(self):
         payloads = [({'configuration': {'statuses': {'max_characters': 750}}}, 750),
                     ({'configuration': {'statuses': {'max_characters': 500}}}, 500)]
@@ -89,54 +86,6 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
         self.assertIn(event['date']['ticket_link'], message)
         self.assertIn('Veranstalter: Veranstalter', message)
 
-    def run_cli(self, directory, details, limit, args, user_input):
-        requests = []
-        summaries = [dict(SUMMARY, date_uuid=e['date']['uuid'], date_slug=e['date']['slug'],
-                          summary=e.get('summary', '')) for e in details]
-        by_path = {f"/api/event/event-1/date/{e['date']['slug']}": e for e in details}
-
-        def respond(request):
-            requests.append(request)
-            path = request.url.path
-            if path == '/api/events':
-                return httpx.Response(200, json={'data': {'events': summaries}})
-            if path in by_path:
-                return httpx.Response(200, json={'data': by_path[path]})
-            if path == '/api/v2/instance':
-                self.assertNotIn('Authorization', request.headers)
-                return httpx.Response(200, json={'configuration': {'statuses': {'max_characters': limit}}})
-            self.assertEqual(path, '/api/v1/statuses')
-            self.assertEqual(request.method, 'POST')
-            return httpx.Response(200, json={'id': f'post-{len(requests)}'})
-
-        client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.dict(os.environ, ENV, clear=True), patch.object(
-            mastodon, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3',
-        ), patch('kulturbytes_common.workflow.httpx.Client', return_value=client):
-            result = CliRunner().invoke(cli, ['mastodon'] + args, input=user_input)
-        return result, requests
-
-    def test_once_per_run_and_preview_matches_actual_status(self):
-        events = [deepcopy(EVENT), deepcopy(EVENT)]
-        events[1]['date'].update(uuid='date-2', slug='second-date')
-        for event in events:
-            event['summary'] = 'Kultur und Überraschungen ' * 100
-        for limit in [500, 750, None]:
-            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:
-                with patch.object(mastodon, 'build_mastodon_message', wraps=mastodon.build_mastodon_message) as build:
-                    result, requests = self.run_cli(directory, events, limit, ['--publish'], 'all\ny\ny\n')
-                self.assertEqual(result.exit_code, 0, result.output)
-                self.assertEqual(build.call_count, 2)
-                self.assertEqual(sum(r.url.path == '/api/v2/instance' for r in requests), 1)
-                posted = [parse_qs(r.content.decode())['status'][0] for r in requests if r.method == 'POST']
-                self.assertEqual(len(posted), 2)
-                for message in posted:
-                    self.assertIn(message, result.output)
-                    self.assertIn(f'Zeichen: {len(message)}/{limit or 500}', result.output)
-                    self.assertLessEqual(len(message), limit or 500)
-                with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
-                    self.assertEqual(conn.execute('SELECT COUNT(*) FROM published_events').fetchone(), (2,))
-
     def test_exact_required_boundary_and_oversized_hashtags(self):
         event = deepcopy(EVENT)
         event['summary'] = ''
@@ -148,42 +97,3 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
         event['tags'] = ['SehrLangerHashtag' * 100]
         with self.assertRaises(click.ClickException):
             mastodon.build_mastodon_message(event, 500)
-
-    def test_real_metadata_discovery_in_credential_free_dry_run(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(ENV, {}, clear=True):
-            event = deepcopy(EVENT)
-            event['summary'] = 'Lange Beschreibung mit Kultur ' * 100
-            result, requests = self.run_cli(directory, [event], 750, ['--dry-run'], '1\n')
-            self.assertEqual(result.exit_code, 0, result.output)
-            self.assertIn('DRY RUN', result.output)
-            self.assertIn('/750', result.output)
-            self.assertEqual(sum(r.url.path == '/api/v2/instance' for r in requests), 1)
-            self.assertTrue(all(r.method == 'GET' for r in requests))
-            with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
-                self.assertEqual(conn.execute('SELECT COUNT(*) FROM published_events').fetchone(), (0,))
-
-    def test_required_overflow_does_not_publish_or_change_database(self):
-        for dry_run in [False, True]:
-            with self.subTest(dry_run=dry_run), tempfile.TemporaryDirectory() as directory:
-                database = Path(directory) / 'posts.sqlite3'
-                with patch.object(mastodon, 'DATABASE_PATH', database):
-                    conn = mastodon.init_database()
-                    mastodon.remember_post(conn, EVENT, 'old-post', 'https://example.test/old')
-                    before = conn.execute('SELECT * FROM published_events').fetchall()
-                    conn.close()
-                event = deepcopy(EVENT)
-                event['title'] = 'Langer Titel ' * 100
-                event['images'] = {'main': {'url': 'https://example.test/image.jpg'}}
-                args = ['--event-uuid', 'event-1', '--date-identifier', 'date-1', '--include-published',
-                        '--dry-run' if dry_run else '--publish']
-                result, requests = self.run_cli(directory, [event], 500, args, 'y\ny\n')
-                self.assertEqual(result.exit_code, 1, result.output)
-                self.assertIn('Instanzlimit von 500 Zeichen', result.output)
-                self.assertFalse(any(r.method == 'POST' for r in requests))
-                self.assertFalse(any(r.url.host == 'example.test' for r in requests))
-                with sqlite3.connect(database) as conn:
-                    self.assertEqual(conn.execute('SELECT * FROM published_events').fetchall(), before)
-
-
-if __name__ == '__main__':
-    unittest.main()

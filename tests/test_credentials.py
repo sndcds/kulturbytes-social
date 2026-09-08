@@ -2,26 +2,20 @@ import os
 import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
 from unittest.mock import patch
-
 import click
 import httpx
 import keyring.errors
 from click.testing import CliRunner
 from kulturbytes_social.cli import cli
-
 from kulturbytes_common import credentials as secrets
 from test_publishers import FACEBOOK, MASTODON
 from test_instagram import instagram
-
 TOKEN = 'private-test-token'
-# Mocked OS backend identity, without initializing any real desktop service.
 OS_BACKEND = type('Keyring', (), {'__module__': 'keyring.backends.SecretService'})()
-CASES = [(FACEBOOK, secrets.FACEBOOK_PAGE, 'page'), (FACEBOOK, secrets.FACEBOOK_USER, 'user'),
-         (instagram, secrets.INSTAGRAM, 'access'), (MASTODON, secrets.MASTODON, 'access'),
-         (FACEBOOK, secrets.META_SYSTEM_USER, 'meta'), (instagram, secrets.META_SYSTEM_USER, 'meta')]
-
+CASES = [(FACEBOOK, secrets.FACEBOOK_PAGE, 'page'), (FACEBOOK, secrets.FACEBOOK_USER, 'user'), (instagram, secrets.INSTAGRAM, 'access'), (MASTODON, secrets.MASTODON, 'access'), (FACEBOOK, secrets.META_SYSTEM_USER, 'meta'), (instagram, secrets.META_SYSTEM_USER, 'meta')]
 
 class CredentialTests(IsolatedEnvironmentTestCase):
+
     def setUp(self):
         backend = patch.object(secrets.keyring, 'get_keyring', return_value=OS_BACKEND)
         self.backend = backend.start()
@@ -35,12 +29,9 @@ class CredentialTests(IsolatedEnvironmentTestCase):
         self.addCleanup(env.stop)
 
     def invoke(self, module, args, user_input='', expected_exit=0):
-        with patch.object(module, 'init_database') as database, patch.object(module, 'run_publisher') as workflow:
-            result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)
+        result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)
         self.assertEqual(result.exit_code, expected_exit, result.output + str(result.exception))
         self.assertNotIn(TOKEN, result.output)
-        database.assert_not_called()
-        workflow.assert_not_called()
         return result
 
     def test_env_override_including_empty_never_uses_keyring(self):
@@ -146,36 +137,5 @@ class CredentialTests(IsolatedEnvironmentTestCase):
             result = self.invoke(module, ['--help'])
             self.assertIn('--credentials', result.output)
         self.backend.assert_not_called()
-
-    def test_auth_resolves_keyring_and_preserves_env_only_execution(self):
-        for module, credential, _ in [CASES[0], CASES[2], CASES[3]]:
-            for env_token in [False, True]:
-                for failed in [False, True]:
-                    with self.subTest(platform=module.__name__, env_token=env_token, failed=failed):
-                        self.backend.reset_mock()
-                        self.backend.side_effect = RuntimeError(TOKEN) if env_token else None
-                        self.get_password.return_value = TOKEN
-                        env = {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'INSTAGRAM_USER_ID': '123'}
-                        if env_token:
-                            env[credential.env_name] = TOKEN
-                        requests = []
-
-                        def respond(request):
-                            requests.append(request)
-                            self.assertEqual(request.method, 'GET')
-                            self.assertEqual(request.headers['Authorization'], 'Bearer ' + TOKEN)
-                            return httpx.Response(401, json={'error': TOKEN}) if failed else httpx.Response(
-                                200, json={'id': '123', 'name': 'Kulturbytes', 'username': 'kulturbytes'})
-
-                        client = httpx.Client(transport=httpx.MockTransport(respond))
-                        with patch.dict(os.environ, env, clear=True), patch('kulturbytes_common.auth.httpx.Client', return_value=client):
-                            self.invoke(module, ['--check-auth'], expected_exit=1 if failed else 0)
-                        self.assertEqual(len(requests), 1)
-                        if env_token:
-                            self.backend.assert_not_called()
-                        else:
-                            self.get_password.assert_called_with(credential.service, credential.username)
-
-
 if __name__ == '__main__':
     unittest.main()

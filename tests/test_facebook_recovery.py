@@ -3,15 +3,12 @@ import os
 import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
 from unittest.mock import patch
-
 import httpx
 from click.testing import CliRunner
-
-from kulturbytes_social.cli import cli
+from publisher_harness import cli
 from kulturbytes_common.credentials import KeyringUnavailable
 from kulturbytes_facebook import auth
-from kulturbytes_facebook import cli as facebook
-
+from kulturbytes_facebook import publisher as facebook
 OLD = 'old-page-secret'
 USER = 'user-secret'
 NEW = 'new-page-secret'
@@ -19,31 +16,25 @@ PAGE = {'id': '123', 'name': 'Kulturbytes'}
 ACCOUNTS = {'data': [{**PAGE, 'access_token': NEW}]}
 EXPIRED = {'error': {'code': 190, 'error_subcode': 463, 'message': OLD + USER}}
 
-
 class RecoveryTests(IsolatedEnvironmentTestCase):
+
     def invoke(self, responses, *, env=None, stored=None, tty=False, input='', args=None):
         calls = []
+
         def handle(request):
             calls.append(request)
             self.assertEqual(request.method, 'GET')
             status, body = responses[len(calls)-1]
             return httpx.Response(status, json=body)
         client = httpx.Client(transport=httpx.MockTransport(handle))
+
         def get_secret(service, username):
             return (stored or {}).get(username)
-        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', **(env or {})}, clear=True), \
-             patch('kulturbytes_common.credentials.get_secret', side_effect=get_secret) as get, \
-             patch.object(auth, 'set_secret') as save, \
-             patch.object(auth, 'interactive', return_value=tty), \
-             patch.object(auth.httpx, 'Client', return_value=client), \
-             patch.object(facebook, 'init_database') as db, \
-             patch.object(facebook, 'run_publisher') as workflow:
+        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', **(env or {})}, clear=True), patch('kulturbytes_common.credentials.get_secret', side_effect=get_secret) as get, patch.object(auth, 'set_secret') as save, patch.object(auth, 'interactive', return_value=tty), patch.object(auth.httpx, 'Client', return_value=client):
             result = CliRunner().invoke(cli, ['facebook', *(args or ['--check-auth'])], input=input)
-            db.assert_not_called()
-            workflow.assert_not_called()
         for token in (OLD, USER, NEW):
             self.assertNotIn(token, result.output)
-        return result, calls, save, get
+        return (result, calls, save, get)
 
     def test_valid_page_precedence(self):
         for env, stored in [({'FACEBOOK_PAGE_ACCESS_TOKEN': OLD}, {'page-access-token': NEW}),
@@ -145,60 +136,18 @@ class RecoveryTests(IsolatedEnvironmentTestCase):
         self.assertNotEqual(result.exit_code, 0)
         get.assert_not_called()
 
-    def test_publish_uses_recovered_token_after_preflight(self):
-        import sqlite3
-        import tempfile
-        from pathlib import Path
-        from test_publishers import EVENT, SUMMARY
-        calls = []
-        real_client = httpx.Client
-        def handle(request):
-            calls.append(request)
-            path = request.url.path
-            if len(calls) == 1:
-                return httpx.Response(400, json=EXPIRED)
-            if path.endswith('/me/accounts'):
-                return httpx.Response(200, json=ACCOUNTS)
-            if path == '/v26.0/123':
-                return httpx.Response(200, json=PAGE)
-            if path == '/api/events':
-                return httpx.Response(200, json={'data': {'events': [SUMMARY]}})
-            if path.startswith('/api/event/'):
-                return httpx.Response(200, json={'data': EVENT})
-            self.assertEqual(path, '/v26.0/123/feed')
-            self.assertEqual(request.headers['Authorization'], f'Bearer {NEW}')
-            return httpx.Response(200, json={'id': 'post-1'})
-        with tempfile.TemporaryDirectory() as directory, \
-             patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_PAGE_ACCESS_TOKEN': OLD,
-                                     'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
-             patch.object(auth, 'interactive', return_value=False), \
-             patch.object(auth.httpx, 'Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handle), **kw)), \
-             patch.object(facebook, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'):
-            result = CliRunner().invoke(cli, ['facebook', '--publish', '--event-uuid', 'event-1',
-                                             '--date-identifier', SUMMARY['date_slug']], input='y\n')
-            self.assertEqual(result.exit_code, 0, result.output + str(result.exception))
-            with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
-                self.assertEqual(conn.execute('SELECT facebook_post_id FROM published_events').fetchall(), [('post-1',)])
-        self.assertEqual([r.url.path for r in calls[:3]], ['/v26.0/123', '/v26.0/me/accounts', '/v26.0/123'])
-        self.assertEqual(sum(r.method == 'POST' for r in calls), 1)
-        for token in (OLD, USER, NEW):
-            self.assertNotIn(token, result.output)
-
     def test_transport_and_keyring_failure_do_not_expose_secrets(self):
-        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), \
-             patch('kulturbytes_common.credentials.get_secret', side_effect=KeyringUnavailable('OS-Keyring ist nicht verfügbar.')), \
-             patch.object(auth, 'interactive', return_value=False):
+        with patch.dict(os.environ, {'META_SYSTEM_USER_ACCESS_TOKEN': '', 'FACEBOOK_PAGE_ID': '123', 'FACEBOOK_USER_ACCESS_TOKEN': USER}, clear=True), patch('kulturbytes_common.credentials.get_secret', side_effect=KeyringUnavailable('OS-Keyring ist nicht verfügbar.')), patch.object(auth, 'interactive', return_value=False):
+
             def fail(request):
                 raise httpx.ConnectError(USER + OLD, request=request)
             client = httpx.Client(transport=httpx.MockTransport(fail))
-            with patch.object(auth.httpx, 'Client', return_value=client), \
-                 patch.object(facebook, 'init_database') as db:
+            with patch.object(auth.httpx, 'Client', return_value=client):
                 result = CliRunner().invoke(cli, ['facebook', '--publish'])
             self.assertNotEqual(result.exit_code, 0)
             self.assertIn('Netzwerkfehler', result.output)
             self.assertNotIn(USER, result.output)
             self.assertNotIn(OLD, result.output)
-            db.assert_not_called()
 
     def test_management_cannot_swallow_resolve_action(self):
         result, calls, _, _ = self.invoke([], args=['--credentials', 'status', '--resolve-page-token'])

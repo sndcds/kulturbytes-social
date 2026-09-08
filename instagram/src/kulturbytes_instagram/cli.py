@@ -9,25 +9,29 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.auth import remote_identifier
+from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
+from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import (
     INSTAGRAM, credential_options, resolve_credential, warn_legacy, meta_candidate, persist_validated_meta,
 )
-from kulturbytes_common.database import get_database_path
+from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import ResolvedValue, get_config
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
 from kulturbytes_common.formatting import strip_markdown
 from kulturbytes_common.media import get_image_url
+from kulturbytes_common.media_security import media_response
 from kulturbytes_common.workflow import run_publisher
 
 CAPTION_LIMIT = 2200
 HASHTAG_LIMIT = 5  # Conservative application cap, including Kulturbytes and city.
 POLL_ATTEMPTS = 5
 POLL_INTERVAL = 60
-DATABASE_PATH = get_database_path("instagram")
+DATABASE_PATH = None  # Optional in-process override; resolve configuration lazily.
 
 
 @dataclass(frozen=True)
@@ -65,8 +69,7 @@ def load_config(*, allow_prompt: bool = False) -> InstagramConfig:
 
 
 def init_database() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = open_database(DATABASE_PATH or get_database_path("instagram"), "instagram")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS published_events (
             date_uuid TEXT PRIMARY KEY,
@@ -78,11 +81,12 @@ def init_database() -> sqlite3.Connection:
             published_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    init_journal(conn)
     conn.commit()
     return conn
 
 
-def remember_post(conn: sqlite3.Connection, event: dict, media_id: str) -> None:
+def remember_post(conn: sqlite3.Connection, event: dict, media_id: str, *, commit: bool = True) -> None:
     event_date = event["date"]
     # An explicitly confirmed repeat publication replaces the stored remote ID.
     conn.execute("""
@@ -96,7 +100,8 @@ def remember_post(conn: sqlite3.Connection, event: dict, media_id: str) -> None:
             start_time=excluded.start_time, published_at=CURRENT_TIMESTAMP
     """, (event_date["uuid"], event["uuid"], media_id, event["title"],
           event_date["start_date"], event_date.get("start_time")))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def build_instagram_caption(event: dict) -> str:
@@ -137,7 +142,7 @@ def build_instagram_caption(event: dict) -> str:
     header_text = "\n".join(header)
     fixed = f"{header_text}\n\n{footer}"
     if len(fixed) > CAPTION_LIMIT:
-        raise ValueError("Instagram: Titel/Metadaten sind zu lang; Link und Hashtags werden nicht abgeschnitten.")
+        raise click.ClickException("Instagram: Titel/Metadaten sind zu lang; Link und Hashtags werden nicht abgeschnitten.")
     summary = strip_markdown(event.get("summary") or event.get("description") or "")
     available = CAPTION_LIMIT - len(fixed) - 2
     if summary and available > 1:
@@ -167,6 +172,10 @@ def instagram_request(
     client: httpx.Client, config: InstagramConfig, method: str, path: str,
     *, data: dict | None = None, params: dict | None = None,
 ) -> dict:
+    if method == "GET":
+        response = safe_get(client, f"{config.base_url}/{path}",
+                            headers={"Authorization": f"Bearer {config.access_token}"}, params=params)
+        return response_payload(response, "Instagram", config.access_token)
     try:
         response = client.request(
             method, f"{config.base_url}/{path}",
@@ -178,33 +187,26 @@ def instagram_request(
     return response_payload(response, "Instagram", config.access_token)
 
 
-def require_id(payload: dict) -> str:
+def require_id(payload: dict, token: str = "") -> str:
     media_id = payload.get("id")
     if not isinstance(media_id, (str, int)) or not str(media_id).isdigit():
         raise RuntimeError("Instagram hat keine gültige Medien-ID zurückgegeben.")
-    return str(media_id)
+    return remote_identifier(media_id, "Instagram", token)
 
 
 def validate_image(client: httpx.Client, event: dict) -> str:
     image_url = get_image_url(event)
     if not image_url:
-        raise ValueError("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
-    parsed = urlsplit(image_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError("Instagram benötigt eine öffentliche HTTP(S)-Bildadresse ohne Zugangsdaten.")
-    # Inspect the actual bytes, not the extension of Kulturbytes' image endpoint.
-    with client.stream("GET", image_url, headers={"Accept": "*/*"}) as response:
-        if response.is_error:
-            click.echo(f"Instagram Bilddownload (HTTP {response.status_code})", err=True)
-        response.raise_for_status()
+        raise click.ClickException("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
+    with media_response(client, image_url) as response:
         prefix = b""
         for chunk in response.iter_bytes():
             prefix += chunk
             if len(prefix) >= 3:
                 break
         if not prefix.startswith(b"\xff\xd8\xff"):
-            raise ValueError("Instagram benötigt ein öffentlich abrufbares JPEG. Das Hauptbild ist kein JPEG.")
-    return image_url
+            raise click.ClickException("Instagram benötigt ein öffentlich abrufbares JPEG. Das Hauptbild ist kein JPEG.")
+    return str(response.url)
 
 
 def wait_for_container(client: httpx.Client, config: InstagramConfig, container_id: str) -> None:
@@ -224,17 +226,19 @@ def wait_for_container(client: httpx.Client, config: InstagramConfig, container_
 def publish_instagram_photo(
     client: httpx.Client, config: InstagramConfig, image_url: str, caption: str,
 ) -> str:
+    begin_remote_mutation("instagram_container")
     container = instagram_request(client, config, "POST", f"{config.user_id}/media",
                                   data={"image_url": image_url, "caption": caption})
-    container_id = require_id(container)
+    container_id = require_id(container, config.access_token)
     wait_for_container(client, config, container_id)
+    begin_remote_mutation("instagram_publish")
     published = instagram_request(client, config, "POST", f"{config.user_id}/media_publish",
                                   data={"creation_id": container_id})
-    return require_id(published)
+    return require_id(published, config.access_token)
 
 
 def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
-                  *, config: InstagramConfig | None = None) -> bool:
+                  *, config: InstagramConfig | None = None, allow_repeat: bool = False) -> bool:
     caption = build_instagram_caption(event)
     click.echo("\n" + "=" * 80)
     click.echo(caption)
@@ -249,9 +253,12 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
         click.echo("Übersprungen.")
         return False
     config = config or authenticate()
-    media_id = publish_instagram_photo(client, config, image_url, caption)
-    # Persist immediately after confirmation from Meta, without optional API reads.
-    remember_post(conn, event, media_id)
+    media_id, _ = execute_publication(
+        conn, "instagram", event,
+        lambda: (publish_instagram_photo(client, config, image_url, caption), None),
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, commit=False), allow_repeat=allow_repeat,
+        message=caption, target_ref=config.user_id,
+    )
     click.secho(f"Instagram-Post erstellt: {media_id}", fg="green")
     return True
 
@@ -281,7 +288,7 @@ def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_
     config = authenticate() if not dry_run else None
 
     def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
-        return publish_event(client, conn, event, dry_run=dry_run, config=config)
+        return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
 
     run_publisher(
         conn=init_database(), publish_event=publish_with_config,

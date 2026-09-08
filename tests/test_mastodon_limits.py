@@ -43,7 +43,7 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
 
                 with httpx.Client(transport=httpx.MockTransport(respond)) as client, patch.object(click, 'echo'):
                     self.assertEqual(mastodon.get_status_limit(client, 'https://example.test'), expected)
-                self.assertEqual(len(requests), 1)
+                self.assertEqual(len(requests), 3 if isinstance(response, httpx.ReadTimeout) else 1)
 
     def test_short_message_unchanged(self):
         self.assertEqual(mastodon.build_mastodon_message(EVENT),

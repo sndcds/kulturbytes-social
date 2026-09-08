@@ -1,6 +1,7 @@
 """Public CLI; platform implementations remain in their workspace packages."""
 
 import click
+from .attempts import attempts_command
 
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command
@@ -15,3 +16,5 @@ def cli() -> None:
 cli.add_command(facebook_command)
 cli.add_command(mastodon_command)
 cli.add_command(instagram_command)
+
+cli.add_command(attempts_command)

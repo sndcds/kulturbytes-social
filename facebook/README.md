@@ -66,7 +66,7 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 | `FACEBOOK_PAGE_ID` | ID der Zielseite | für `--publish` und `--check-auth` erforderlich |
 | `META_SYSTEM_USER_ACCESS_TOKEN` | Gemeinsamer Zugang für Facebook und Instagram | alternativ im OS-Keyring |
 | `FACEBOOK_GRAPH_API_VERSION` | Verwendete Graph-API-Version | `v26.0` |
-| `DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
+| `FACEBOOK_DATABASE_PATH` | Pfad zur lokalen Datenbank | `facebook_posts.sqlite3` |
 
 Zugangsdaten werden erst für `--publish` und `--check-auth` geladen; validierte
 primäre Fallback-Tokens werden dabei in `.env` übernommen.
@@ -223,7 +223,7 @@ erfolgreichen Veröffentlichung speichert er die Termin-ID (`date_uuid`),
 Veranstaltungsdaten und die Facebook-Post-ID.
 So erkennt er beim nächsten Lauf bereits veröffentlichte Termine.
 
-Behalte diese Datenbank bei einem Umzug oder Update. Mit `DATABASE_PATH` kannst
+Behalte diese Datenbank bei einem Umzug oder Update. Mit `FACEBOOK_DATABASE_PATH` kannst
 du einen anderen Pfad festlegen. Relative Werte beziehen sich auf das Verzeichnis
 der Standarddatenbank, absolute Werte werden unverändert verwendet. Facebook und Mastodon benötigen
 jeweils eine eigene Datenbank.
@@ -232,7 +232,7 @@ jeweils eine eigene Datenbank.
 Veröffentlichung eines bekannten Termins. Nach erfolgreicher Veröffentlichung
 ersetzt der neue Eintrag die gespeicherte Facebook-Post-ID
 für dieselbe `date_uuid` und aktualisiert Veranstaltungsdaten und `published_at`.
-Es wird nur die letzte Veröffentlichung gespeichert. Schlägt die Veröffentlichung
+`published_events` speichert die letzte Veröffentlichung; das Journal bewahrt alle Versuche. Schlägt die Veröffentlichung
 auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 
 ## Hilfe bei Problemen
@@ -244,7 +244,7 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 | Es stehen keine Termine zur Auswahl | Prüfe den Stadtfilter. Bereits veröffentlichte Termine siehst du mit `--include-published`; vergangene oder nicht freigegebene Termine werden ausgefiltert. |
 | Facebook lehnt die Veröffentlichung ab | Prüfe die ausgegebene API-Antwort, die Seiten-ID sowie Gültigkeit und Veröffentlichungsrechte des Page Access Tokens. |
 | Ein Fotobeitrag schlägt fehl | Prüfe die Bildadresse aus der Vorschau und die API-Fehlermeldung. Bei einem fehlerhaften Bild erfolgt kein automatischer Wechsel zum Textbeitrag. |
-| Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `DATABASE_PATH` existiert und beschreibbar ist. |
+| Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `FACEBOOK_DATABASE_PATH` existiert und beschreibbar ist. |
 
 Die verfügbaren Optionen zeigt `uv run kulturbytes-social facebook --help` auch ohne Zugangsdaten.
 
@@ -297,3 +297,35 @@ Die Kompatibilität bleibt für diese Übergangsversion bestehen; Entfernung ers
 separater Ankündigung in einer kommenden inkompatiblen Version. Es gibt keinen
 Browser-OAuth-Login, keine User-/System-Token-Erneuerung und keine automatische
 System-User-Provisionierung. API-Grundlage: [Metas Pages-Token-Abfrage](https://www.postman.com/meta/facebook/request/bqfxwbp/get-access-tokens-of-pages-you-manage).
+
+## Gemeinsame Schutzmechanismen
+
+Der plattformspezifische Datenbankpfad folgt `.env` vor Prozessumgebung. Fehlt er,
+gilt noch `DATABASE_PATH` mit Veraltungswarnung, danach der bisherige Standard.
+Ein fremdes Plattform-Schema wird abgelehnt. Bestehende Veröffentlichungen bleiben
+bei der automatischen Ergänzung von `publisher_metadata`, `publication_attempts`
+und dem eindeutigen Reservierungsindex erhalten.
+
+API-Antworten werden vor der Verwendung validiert; „heute“ meint `Europe/Berlin`.
+Medien sind auf `https://api.kulturbytes.de:443` beschränkt. Der gemeinsame Transport
+verbindet direkt zur geprüften öffentlichen IP mit ursprünglichem Host-Header,
+TLS-SNI und aktivierter Zertifikatsprüfung. DNS-Rebinding und Umgebungs-Proxys können
+diese lokale Zielbindung nicht umgehen; Medien verwenden `trust_env=False`.
+Sichere GETs haben höchstens drei Versuche und respektieren die Client-Timeouts oder
+ausdrückliche Overrides. POSTs werden nie automatisch wiederholt. Größenlimits
+bleiben in Issue #6 offen; Metas eigener Bildabruf wird nicht durch unseren Transport gesteuert.
+
+Jeder bestätigte Publish-Versuch reserviert den Termin vor dem Remote-Aufruf.
+Remote-Erfolg wird vor der abschließenden lokalen Speicherung journalisiert.
+Vor jedem POST steht die genaue `mutation_stage` im Journal. Termin-Slug,
+`target_ref` und ein `content_sha256` des tatsächlich verwendeten Textes helfen bei
+der Zuordnung. Tokens und vollständige Nachrichtentexte werden nicht gespeichert.
+Die neuen Spalten werden ohne Datenverlust ergänzt; bestehende Versuche behalten
+unbekannte Kontextwerte. Abschließende lokale Speicherung und Wiederherstellung
+haben jeweils einen gemeinsamen Transaktionsrahmen.
+Unklare oder teilweise abgeschlossene Versuche blockieren auch `--include-published`
+bis zur manuellen Auflösung. Dry-Runs und abgelehnte Bestätigungen reservieren nichts.
+Die [Projektanleitung](../README.md#veröffentlichungsjournal-und-wiederherstellung)
+beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
+`--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
+der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.

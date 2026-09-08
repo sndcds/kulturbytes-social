@@ -1,3 +1,4 @@
+import click
 import os
 import sqlite3
 import tempfile
@@ -175,18 +176,23 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assert_unpublished()
 
     def test_api_failures_do_not_record_success_and_redact_token(self):
-        for path in ['/v26.0/123/media', '/v26.0/456', '/v26.0/123/media_publish']:
+        for index, path in enumerate(['/v26.0/123/media', '/v26.0/456', '/v26.0/123/media_publish']):
+            self.database = Path(self.directory.name) / f'rejected-api-{index}.db'
             with self.subTest(path=path):
                 self.requests.clear()
                 self.overrides = {path: lambda r: httpx.Response(400, json={'error': {'message': 'secret-token denied'}})}
                 result = self.run_cli(DIRECT + ['--publish'], 'y\n', expected_exit=1)
                 self.assertNotIn('secret-token', result.output)
-                self.assertIn('[REDACTED]', result.output)
+                if path == '/v26.0/456':
+                    self.assertIn('Phase=instagram_container', result.output)
+                else:
+                    self.assertIn('[REDACTED]', result.output)
                 with sqlite3.connect(self.database) as conn:
                     self.assertFalse(already_published(conn, 'date-1'))
 
     def test_invalid_creation_response_does_not_publish(self):
-        for payload in [{}, {'id': None}, [], {'error': 'secret-token'}]:
+        for index, payload in enumerate([{}, {'id': None}, [], {'error': 'secret-token'}]):
+            self.database = Path(self.directory.name) / f'invalid-response-{index}.db'
             with self.subTest(payload=payload):
                 self.overrides = {'/v26.0/123/media': lambda r: httpx.Response(200, json=payload)}
                 result = self.run_cli(DIRECT + ['--publish'], 'y\n', expected_exit=1)
@@ -194,7 +200,8 @@ class InstagramTests(IsolatedEnvironmentTestCase):
                 self.assert_unpublished()
 
     def test_container_error_and_timeout_do_not_publish(self):
-        for status in ['ERROR', 'EXPIRED', 'PUBLISHED', 'IN_PROGRESS', None]:
+        for index, status in enumerate(['ERROR', 'EXPIRED', 'PUBLISHED', 'IN_PROGRESS', None]):
+            self.database = Path(self.directory.name) / f'container-status-{index}.db'
             with self.subTest(status=status):
                 self.overrides = {'/v26.0/456': lambda r: httpx.Response(200, json={'status_code': status})}
                 with patch.object(instagram.time, 'sleep'):
@@ -220,7 +227,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assertIn('#Kulturbytes', hashtags)
         self.assertIn('#Flensburg', hashtags)
         event['title'] = 'A' * 2300
-        with self.assertRaises(ValueError):
+        with self.assertRaises(click.ClickException):
             instagram.build_instagram_caption(event)
 
     def test_shared_markdown_normalization(self):

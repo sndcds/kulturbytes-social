@@ -9,10 +9,13 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.auth import remote_identifier, remote_url
+from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
+from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
-from kulturbytes_common.database import get_database_path
+from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import get_config
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
@@ -64,12 +67,11 @@ def check_auth(config: MastodonConfig) -> None:
     click.echo(redact(f"✓ Konto: @{acct}", config.access_token))
 
 
-DATABASE_PATH = get_database_path("mastodon")
+DATABASE_PATH = None  # Optional in-process override; resolve configuration lazily.
 
 
 def init_database() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = open_database(DATABASE_PATH or get_database_path("mastodon"), "mastodon")
 
     conn.execute(
         """
@@ -86,6 +88,7 @@ def init_database() -> sqlite3.Connection:
         """
     )
 
+    init_journal(conn)
     conn.commit()
     return conn
 
@@ -95,6 +98,7 @@ def remember_post(
     event: dict,
     mastodon_status_id: str,
     mastodon_status_url: str | None,
+    *, commit: bool = True,
 ) -> None:
     event_date = event["date"]
 
@@ -130,7 +134,8 @@ def remember_post(
         ),
     )
 
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 DEFAULT_STATUS_LIMIT = 500
@@ -139,14 +144,14 @@ DEFAULT_STATUS_LIMIT = 500
 def get_status_limit(client: httpx.Client, base_url: str) -> int:
     """Read public Mastodon v2 configuration; malformed/unavailable data uses 500."""
     try:
-        response = client.get(f"{base_url}/api/v2/instance", follow_redirects=False)
+        response = safe_get(client, f"{base_url}/api/v2/instance", follow_redirects=False)
         response.raise_for_status()
         value = response.json()
         for key in ("configuration", "statuses", "max_characters"):
             value = value.get(key) if isinstance(value, dict) else None
         if type(value) is int and value > 0:
             return value
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError, click.ClickException):
         pass
     click.echo("Mastodon-Instanzlimit nicht verfügbar; verwende 500 Zeichen.", err=True)
     return DEFAULT_STATUS_LIMIT
@@ -276,7 +281,7 @@ def wait_for_media(
     )
 
     for _ in range(10):
-        response = client.get(
+        response = safe_get(client,
             url,
             headers={
                 "Authorization": (
@@ -323,6 +328,7 @@ def upload_mastodon_media(
         "/api/v2/media"
     )
 
+    begin_remote_mutation("mastodon_media")
     response = client.post(
         url,
         headers={
@@ -336,6 +342,7 @@ def upload_mastodon_media(
                 get_image_alt_text(event)
             ),
         },
+        follow_redirects=False,
         files={
             "file": (
                 filename,
@@ -356,7 +363,7 @@ def upload_mastodon_media(
             + redact(str(payload), config.access_token)
         )
 
-    return str(media_id)
+    return remote_identifier(media_id, "Mastodon", config.access_token)
 
 
 def publish_mastodon_status(
@@ -383,12 +390,14 @@ def publish_mastodon_status(
     if media_id:
         data["media_ids[]"] = media_id
 
+    begin_remote_mutation("mastodon_status")
     response = client.post(
         f"{config.base_url}/api/v1/statuses",
         headers={
             "Authorization": f"Bearer {config.access_token}",
         },
         data=data,
+        follow_redirects=False,
     )
 
     payload = response_payload(response, "Mastodon", config.access_token)
@@ -400,7 +409,8 @@ def publish_mastodon_status(
             + redact(str(payload), config.access_token)
         )
 
-    return str(status_id), payload.get("url")
+    return (remote_identifier(status_id, "Mastodon", config.access_token),
+            remote_url(payload.get("url"), config.access_token))
 
 
 def publish_event(
@@ -411,6 +421,7 @@ def publish_event(
     *,
     max_length: int = DEFAULT_STATUS_LIMIT,
     config: MastodonConfig | None = None,
+    allow_repeat: bool = False,
 ) -> bool:
     message = build_mastodon_message(event, max_length=max_length)
     print_event_preview(event, message, max_length)
@@ -433,41 +444,17 @@ def publish_event(
 
         return False
 
-    (
-        mastodon_status_id,
-        mastodon_status_url,
-    ) = publish_mastodon_status(
-        client,
-        event,
-        message=message,
-        config=config,
+    config = config or load_config()
+    mastodon_status_id, mastodon_status_url = execute_publication(
+        conn, "mastodon", event,
+        lambda: publish_mastodon_status(client, event, message=message, config=config),
+        lambda remote_id, remote_url: remember_post(conn, event, remote_id, remote_url, commit=False), allow_repeat=allow_repeat,
+        message=message, target_ref=config.base_url,
     )
-
-    click.secho(
-        (
-            "Mastodon-Post erstellt: "
-            f"{mastodon_status_id}"
-        ),
-        fg="green",
-    )
-
+    click.secho(f"Mastodon-Post erstellt: {mastodon_status_id}", fg="green")
+    click.echo(f"Gespeichert: {event['date']['uuid']} -> {mastodon_status_id}")
     if mastodon_status_url:
-        click.echo(
-            mastodon_status_url
-        )
-
-    remember_post(
-        conn,
-        event,
-        mastodon_status_id,
-        mastodon_status_url,
-    )
-
-    click.echo(
-        "Gespeichert: "
-        f"{event['date']['uuid']} "
-        f"-> {mastodon_status_id}"
-    )
+        click.echo(mastodon_status_url)
 
     return True
 
@@ -546,7 +533,7 @@ def mastodon_command(
         nonlocal status_limit
         if status_limit is None:
             status_limit = get_status_limit(client, base_url)
-        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config)
+        return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config, allow_repeat=include_published)
 
     run_publisher(
         conn=init_database(),

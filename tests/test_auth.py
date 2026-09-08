@@ -62,7 +62,8 @@ class AuthTests(IsolatedEnvironmentTestCase):
         publish.assert_not_called()
         self.assertNotIn(TOKEN, result.output)
         self.assertNotIn(quote(TOKEN, safe=''), result.output)
-        self.assertEqual(len(requests), 1)
+        self.assertEqual(len(requests), 3 if isinstance(response, (httpx.ConnectError, httpx.ReadTimeout)) or
+                         isinstance(response, httpx.Response) and response.status_code in (429, 502, 503, 504) else 1)
         return result, requests[0]
 
     def test_auth_success_and_precedence(self):

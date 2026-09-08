@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
@@ -138,14 +139,14 @@ DEFAULT_STATUS_LIMIT = 500
 def get_status_limit(client: httpx.Client, base_url: str) -> int:
     """Read public Mastodon v2 configuration; malformed/unavailable data uses 500."""
     try:
-        response = client.get(f"{base_url}/api/v2/instance", follow_redirects=False)
+        response = safe_get(client, f"{base_url}/api/v2/instance", follow_redirects=False)
         response.raise_for_status()
         value = response.json()
         for key in ("configuration", "statuses", "max_characters"):
             value = value.get(key) if isinstance(value, dict) else None
         if type(value) is int and value > 0:
             return value
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError, click.ClickException):
         pass
     click.echo("Mastodon-Instanzlimit nicht verfügbar; verwende 500 Zeichen.", err=True)
     return DEFAULT_STATUS_LIMIT
@@ -275,7 +276,7 @@ def wait_for_media(
     )
 
     for _ in range(10):
-        response = client.get(
+        response = safe_get(client, 
             url,
             headers={
                 "Authorization": (

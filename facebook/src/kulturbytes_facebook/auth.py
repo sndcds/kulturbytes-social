@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import redact
 from kulturbytes_common.credentials import (
@@ -22,7 +23,7 @@ def interactive() -> bool:
 
 def request(client: httpx.Client, url: str, token: str, **params: str) -> dict:
     try:
-        response = client.get(url, params=params, headers={'Authorization': f'Bearer {token}'},
+        response = safe_get(client, url, params=params, headers={'Authorization': f'Bearer {token}'},
                               follow_redirects=False)
     except httpx.RequestError:
         raise click.ClickException('Facebook: Netzwerkfehler bei der Authentifizierung.') from None

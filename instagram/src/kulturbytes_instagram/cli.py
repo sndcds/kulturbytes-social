@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx
+from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import (
@@ -166,6 +167,10 @@ def instagram_request(
     client: httpx.Client, config: InstagramConfig, method: str, path: str,
     *, data: dict | None = None, params: dict | None = None,
 ) -> dict:
+    if method == "GET":
+        response = safe_get(client, f"{config.base_url}/{path}",
+                            headers={"Authorization": f"Bearer {config.access_token}"}, params=params)
+        return response_payload(response, "Instagram", config.access_token)
     try:
         response = client.request(
             method, f"{config.base_url}/{path}",

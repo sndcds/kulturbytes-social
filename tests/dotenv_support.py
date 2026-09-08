@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 class IsolatedEnvironmentTestCase(unittest.TestCase):
     def run(self, result=None):
-        with tempfile.TemporaryDirectory() as directory, patch(
+        with patch('kulturbytes_common.http.time.sleep'), tempfile.TemporaryDirectory() as directory, patch(
             'kulturbytes_common.environment.get_env_file_path', return_value=Path(directory) / '.env',
         ):
             return super().run(result)

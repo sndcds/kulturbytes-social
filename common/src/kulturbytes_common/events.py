@@ -4,6 +4,7 @@ from datetime import date, datetime
 from .timezone import TIMEZONE, application_today
 
 import httpx
+from kulturbytes_common.http import safe_get
 import click
 from .models import validate_list, validate_detail
 
@@ -15,7 +16,7 @@ def get_events(
     client: httpx.Client,
     *, target: tuple[str, str] | None = None,
 ) -> list[dict]:
-    response = client.get(
+    response = safe_get(client, 
         KULTURBYTES_EVENTS_API,
     )
 
@@ -41,7 +42,7 @@ def get_event_details(
         f"{event_uuid}/date/{date_slug}"
     )
 
-    response = client.get(url)
+    response = safe_get(client, url)
     response.raise_for_status()
 
     try:

@@ -5,6 +5,7 @@ from urllib.parse import quote, quote_plus
 
 import click
 import httpx
+from kulturbytes_common.http import safe_get
 
 
 def redact(text: str, token: str) -> str:
@@ -51,7 +52,7 @@ def check_auth_request(platform: str, url: str, token: str, *, params: dict | No
             follow_redirects=False,
             headers={"User-Agent": f"Kulturbytes-{platform}-Publisher/1.0", "Accept": "application/json"},
         ) as client:
-            response = client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+            response = safe_get(client, url, params=params, headers={"Authorization": f"Bearer {token}"})
             return response_payload(response, platform, token)
     except httpx.RequestError:
         # Transport exceptions can embed credentials or upstream URLs.

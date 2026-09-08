@@ -94,7 +94,7 @@ weder Mediencontainer noch Beitrag. Ohne `--publish` bleibt es beim Dry-Run.
 | `META_SYSTEM_USER_ACCESS_TOKEN` | Gemeinsamer Meta-Zugang | alternativ im OS-Keyring |
 | `INSTAGRAM_LOGIN_TYPE` | API-Modus | `facebook` mit Meta-Token; `instagram` mit Legacy-Token |
 | `INSTAGRAM_GRAPH_API_VERSION` | Graph-Version | `v26.0` |
-| `DATABASE_PATH` | Optionaler SQLite-Pfad | stabiler Plattform-State-Pfad, siehe unten |
+| `INSTAGRAM_DATABASE_PATH` | Optionaler SQLite-Pfad | stabiler Plattform-State-Pfad, siehe unten |
 
 ### Legacy-Migration
 
@@ -238,14 +238,14 @@ Erst die bestätigte Medien-ID wird zusammen mit der `date_uuid` in
 im Checkout liegt sie fest unter `instagram/`, bei einer separaten Installation
 unter `$XDG_DATA_HOME/kulturbytes-social/` (Fallback: `~/.local/share/kulturbytes-social/`). Ein Dry-Run darf
 die Datei anlegen, speichert aber keine Veröffentlichung. Bewahre die Datenbank auf,
-damit bereits veröffentlichte Termine weiter erkannt werden. `DATABASE_PATH` mit
+damit bereits veröffentlichte Termine weiter erkannt werden. `INSTAGRAM_DATABASE_PATH` mit
 einem absoluten Pfad verwendet deine bestehende Datei; relative Werte beziehen
 sich auf das Standarddatenbankverzeichnis, nicht auf das Arbeitsverzeichnis.
 
 Bei einer ausdrücklich bestätigten Wiederveröffentlichung ersetzt der neue
-Instagram-Eintrag den bisherigen Datenbankeintrag; eine Historie wird nicht geführt.
+Instagram-Eintrag den bisherigen Eintrag in `published_events`; das Journal bewahrt die Versuchshistorie.
 Scheitert die abschließende Anfrage durch einen Verbindungsabbruch, kann der Beitrag
-remote trotzdem entstanden sein. Vor einem erneuten Versuch prüfe das Konto.
+remote trotzdem entstanden sein. Der ungeklärte Versuch bleibt gesperrt; prüfe das Konto und löse ihn ausdrücklich auf.
 Das Tool wiederholt Veröffentlichungsanfragen nicht automatisch.
 
 ## Tests
@@ -265,3 +265,25 @@ Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 ## Lizenz
 
 [AGPL-3.0](../LICENSE)
+
+## Gemeinsame Schutzmechanismen
+
+Der plattformspezifische Datenbankpfad folgt `.env` vor Prozessumgebung. Fehlt er,
+gilt noch `DATABASE_PATH` mit Veraltungswarnung, danach der bisherige Standard.
+Ein fremdes Plattform-Schema wird abgelehnt. Bestehende Veröffentlichungen bleiben
+bei der automatischen Ergänzung von `publisher_metadata`, `publication_attempts`
+und dem eindeutigen Reservierungsindex erhalten.
+
+API-Antworten werden vor der Verwendung validiert; „heute“ meint `Europe/Berlin`.
+Bildabrufe verwenden die gemeinsame HTTPS-/DNS-/Redirect-Prüfung. Sichere GETs
+haben höchstens drei Versuche mit begrenzter Pause; veröffentlichende POSTs werden
+nie automatisch wiederholt. Die DNS-Prüfung ist keine Bindung der tatsächlichen
+Verbindung an eine bestimmte IP. Größenlimits bleiben in Issue #6 offen.
+
+Jeder bestätigte Publish-Versuch reserviert den Termin vor dem Remote-Aufruf.
+Remote-Erfolg wird vor der abschließenden lokalen Speicherung journalisiert.
+Unklare oder teilweise abgeschlossene Versuche blockieren auch `--include-published`
+bis zur manuellen Auflösung. Dry-Runs und abgelehnte Bestätigungen reservieren nichts.
+Die [Projektanleitung](../README.md#veröffentlichungsjournal-und-wiederherstellung)
+beschreibt `kulturbytes-social attempts list` und `attempts resolve`, einschließlich
+der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.

@@ -315,7 +315,7 @@ und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; sie
 
 ## Lokale Daten
 
-Jede Plattform behält ihre eigene SQLite-Datenbank und ihr bisheriges Schema.
+Jede Plattform behält ihre eigene SQLite-Datenbank und die bisherigen Veröffentlichungseinträge.
 Im Checkout sind die Standardpfade fest am Repository verankert:
 
 - `facebook/facebook_posts.sqlite3`
@@ -328,12 +328,105 @@ Installation außerhalb eines Checkouts liegen die Dateien unter
 Ein Arbeitsverzeichniswechsel ändert diese Pfade nicht. Verzeichnisse werden erst
 beim Initialisieren der Datenbank angelegt, nicht bei Hilfe oder Auth-Checks.
 
-`DATABASE_PATH` überschreibt den jeweiligen Pfad. Absolute Werte werden direkt
-verwendet; relative Werte beziehen sich auf das Standarddatenbankverzeichnis der
-Plattform. Niemals mehrere Plattformen auf dieselbe Datenbankdatei verweisen lassen.
-Dry-Runs können die Datei anlegen, schreiben aber keine Veröffentlichung.
-Erst nach bestätigtem Remote-Erfolg wird die `date_uuid` gespeichert; bestätigte
-Wiederveröffentlichungen ersetzen den bisherigen Eintrag.
+Verwende `FACEBOOK_DATABASE_PATH`, `INSTAGRAM_DATABASE_PATH` und
+`MASTODON_DATABASE_PATH` für eigene Pfade. Pro Einstellung gilt `.env` vor
+Prozessumgebung. Der plattformspezifische Schlüssel hat Vorrang vor `DATABASE_PATH`;
+dieser alte Fallback funktioniert noch, meldet aber einmal pro Prozess eine
+Veraltungswarnung. Ohne Override bleibt der Standardpfad erhalten. Absolute Werte
+werden direkt verwendet, relative Werte beziehen sich auf das Standarddatenbankverzeichnis
+der Plattform. Eine bereits einer anderen Plattform zugeordnete Datei oder ein
+fremdes Veröffentlichungsschema wird beim Öffnen abgelehnt.
+Dry-Runs können Tabellen anlegen, reservieren aber keinen Termin und schreiben
+keine Veröffentlichung. `published_events` enthält weiterhin den jeweils letzten
+bestätigten Post pro Termin; die Versuchshistorie steht im zusätzlichen Journal.
+
+## Schutz bei API-, Medien- und Veröffentlichungsfehlern
+
+Kulturbytes-Antworten werden unmittelbar am API-Eingang mit Pydantic geprüft.
+Ein ungültiger Listeneintrag wird gemeldet und übersprungen; gültige Nachbarn bleiben
+verwendbar. Eine ungültige Gesamtantwort oder direkt gewählte Veranstaltung führt
+zum Fehler. Event-UUID, Termin-UUID und Slug müssen zwischen Liste und Details
+übereinstimmen. IDs sind bewusst begrenzte, nicht leere Pfadsegmente statt strikt
+geparster UUIDs, damit auch bestehende vereinfachte IDs gültig bleiben. Fehlende
+optionale Felder und `null` werden berücksichtigt. Die Listenzusammenfassung hat
+weiter Vorrang vor der Detailbeschreibung. „Heute“ richtet sich für alle Plattformen
+nach `Europe/Berlin`, unabhängig von der Zeitzone des Rechners.
+
+Bildabrufe erlauben nur HTTPS ohne eingebettete Zugangsdaten. Literale IP-Adressen
+und sämtliche DNS-Antworten müssen global erreichbar sein; lokale, private,
+reservierte, Link-Local- und Multicast-Ziele werden abgelehnt. Jeder Request,
+Retry und jeder der höchstens fünf Redirects wird erneut geprüft. Das gilt für
+Facebook-/Mastodon-Downloads und die Instagram-JPEG-Prüfung. Instagram erhält die
+abschließend geprüfte URL. Die DNS-Vorabprüfung bindet die spätere Verbindung
+**nicht** an eine bestimmte IP: DNS-Rebinding zwischen Prüfung und Verbindung,
+Proxy-Auflösung und Instagrams eigener späterer Abruf bleiben außerhalb dieser
+Garantie. Ein eigener Socket-Transport wird nicht eingeführt. Download-Größenlimits
+sind weiterhin Gegenstand von Issue #6.
+
+Sichere GETs für Kulturbytes, Auth-Prüfungen, Instanzdaten, Polling und Medien
+verwenden denselben HTTP-Client und höchstens drei Versuche bei 429/502/503/504,
+ConnectTimeout, ReadTimeout und ConnectError. Die Wartezeiten betragen normalerweise
+0,5 und 1 Sekunde; `Retry-After` (Sekunden oder HTTP-Datum) wird auf fünf Sekunden
+pro Pause begrenzt. Netzwerkphasen verwenden fünf Sekunden Timeout. Das ist keine
+globale Frist für DNS oder einen fortlaufenden Download. Bei gestreamten Medien
+gelten die Retries bis zum Empfang der Header; ein abgebrochener Body wird nicht
+fortgesetzt. **POSTs werden nie automatisch wiederholt**, auch Medienuploads und
+Instagram-Container nicht. Die bestehenden fachlichen Polling-Intervalle bleiben.
+
+## Veröffentlichungsjournal und Wiederherstellung
+
+Jede Datenbank erhält zusätzlich `publisher_metadata` und `publication_attempts`.
+Die erste Tabelle schützt vor einer versehentlichen Nutzung durch eine andere
+Plattform. Das Journal speichert pro Versuch eine eigene UUID, Plattform, Termin,
+minimale Veranstaltungsmetadaten, Zeitstempel, Zustand und gegebenenfalls Remote-ID
+und -URL. Tokens werden darin nicht gespeichert. Bestehende `published_events`
+bleiben erhalten; die Tabellen und der Index werden automatisch ergänzt.
+
+Nach deiner Veröffentlichungsbestätigung wird der Termin atomar reserviert:
+`reserved → publishing → remote_succeeded → published`. Ein partieller eindeutiger
+Index sperrt aktive Versuche je Plattform und `date_uuid`. Kurze SQLite-Transaktionen
+mit `BEGIN IMMEDIATE` und fünf Sekunden `busy_timeout` schützen auch zwischen
+getrennten Prozessen. Andere Termine und Plattformen bleiben unabhängig. Das
+bestehende SQLite-Journalformat wird beibehalten; WAL wird nicht erzwungen.
+
+Ein Fehler vor dem Remote-Aufruf oder eine eindeutige API-Ablehnung kann den Versuch
+als `failed` freigeben. Bei unklarem Ausgang nach einem POST bleibt `publishing`
+gesperrt. Sobald eine Post-ID zurückkommt, wird sie als `remote_succeeded` gespeichert,
+bevor `published_events` aktualisiert wird. Scheitert dieser zweite Schritt, ist die
+ID aus dem Journal wiederherstellbar. Ist bereits die Speicherung der Remote-ID
+unmöglich, bleibt die vorher gespeicherte Reservierung gesperrt; die Fehlermeldung
+nennt die zurückgegebene ID. Ein Prozessabsturz zwischen Remote-Erfolg und Speicherung
+kann ebenfalls einen unklaren Zustand hinterlassen. Das ist keine verteilte Transaktion.
+
+Ungeklärte Versuche werden bei der Auswahl gemeldet und blockieren auch
+`--include-published`. Sie laufen nicht automatisch ab. Zuerst den betroffenen
+Publisher-Prozess stoppen und den tatsächlichen Beitrag auf der Plattform prüfen.
+Anschließend das lokale Journal anzeigen:
+
+```bash
+uv run kulturbytes-social attempts list --platform facebook
+```
+
+Setze `ATTEMPT_UUID` auf die angezeigte Versuch-ID. Für einen bereits im Journal
+bestätigten Remote-Erfolg repariert dieser Befehl ausschließlich die lokalen Daten:
+
+```bash
+uv run kulturbytes-social attempts resolve --platform facebook "$ATTEMPT_UUID" --outcome published
+```
+
+Bei einem unklaren Versuch mit manuell gefundenem Beitrag zusätzlich
+`--remote-id "$REMOTE_POST_ID"` angeben (Mastodon optional `--remote-url`). Nur wenn
+**sicher kein Beitrag entstanden ist**, darf eine Reservierung freigegeben werden:
+
+```bash
+uv run kulturbytes-social attempts resolve --platform facebook "$ATTEMPT_UUID" --outcome failed
+```
+
+Beide Befehle verlangen eine Bestätigung der manuellen Prüfung; ein gespeicherter
+`remote_succeeded`-Zustand lässt sich nicht zu `failed` herabstufen. Ersetze `facebook`
+bei Bedarf durch `mastodon` oder `instagram`. Diese Befehle benötigen keine Tokens
+und machen keine Remote-Anfragen. Nach vollständigem Abschluss bleibt eine ausdrücklich
+bestätigte Wiederveröffentlichung möglich; sie erhält eine neue Versuch-ID.
 
 ## Migration
 
@@ -351,7 +444,7 @@ Führe nach dem Update `uv sync --all-packages` aus.
 
 Die bisherigen Standarddatenbanken in den Plattformordnern werden weiterbenutzt.
 Falls du bisher einen anderen Pfad oder ein anderes Arbeitsverzeichnis genutzt hast,
-setze **vor der nächsten Veröffentlichung** `DATABASE_PATH` auf den absoluten Pfad
+setze **vor der nächsten Veröffentlichung** den passenden `<PLATFORM>_DATABASE_PATH` auf den absoluten Pfad
 deiner bestehenden plattformspezifischen Datei. Dasselbe gilt beim Wechsel vom
 Checkout zu einer separaten Installation: Es gibt keine automatische Kopie oder
 Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennung erhalten.
@@ -404,7 +497,10 @@ und Datenbankschemata. Führe die gemeinsamen Tests im Repository-Hauptordner au
 uv run --all-packages python -m unittest discover -s tests -v
 ```
 
-Die Tests verwenden simulierte HTTP-Antworten und temporäre Datenbanken.
+Die Tests verwenden simulierte HTTP-Antworten, DNS, Schlafzeiten und temporäre Datenbanken.
+Zusätzliche Regressionstests prüfen API-Modelle, Berliner Tagesgrenzen, GET-Retries,
+SSRF/Redirects sowie Reservierungen über getrennte SQLite-Verbindungen und die
+Wiederherstellung nach Remote-Erfolg mit anschließendem SQLite-Fehler.
 
 ## Lizenz
 

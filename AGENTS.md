@@ -179,7 +179,7 @@ All publishers currently support:
 - `--limit N`: limit the offered list; default `50`, `0` means all candidates.
 - `--include-published`: also offer known dates, with an additional confirmation even in dry run.
 
-Current filtering checks the discovery record and requires `date_uuid`. It uses host-local `date.today()`, not explicitly Berlin time. Missing dates are skipped, but malformed dates can abort discovery. Detail-level release status is not rechecked. These are known gaps when improving validation.
+Current filtering checks validated discovery records and requires `date_uuid`. It uses the shared `application_today()` in Europe/Berlin. Invalid/missing dates are rejected at the API boundary per list item; malformed envelopes fail. Detail-level release status is not rechecked.
 
 The summary `date_uuid` and detailed `date.uuid` must match. A mismatched or missing detailed date identity is a hard error before `publish_event`, including in dry run: no remote publication or local publication-record update is allowed, and the summary identifier must not be substituted. Errors include the event UUID, date slug, and both date identifiers. Direct selection exits nonzero; interactive selection reports the error for that event and continues with remaining selected events.
 
@@ -420,7 +420,7 @@ from repeat publishing, date validation, auth preflight and Mastodon instance li
 
 ## SQLite deduplication
 
-The publishers use separate SQLite databases with incompatible platform-specific schemas. Do not point both at the same file. `DATABASE_PATH` overrides the path; relative values resolve against the platform default database directory, not CWD. In a source checkout, defaults remain anchored at `REPO/PLATFORM/PLATFORM_posts.sqlite3` to reuse existing state. Outside a checkout, defaults are `$XDG_DATA_HOME/kulturbytes-social/PLATFORM_posts.sqlite3` or `~/.local/share/kulturbytes-social/PLATFORM_posts.sqlite3`. Absolute overrides are used directly. Existing non-default databases must be selected explicitly when migrating; never silently copy or merge them. Parent directories are created only during database initialization. Dry run may create the database and table but does not record publications.
+The publishers use separate SQLite databases with incompatible platform-specific schemas. Initialization verifies existing platform ID columns and claims `publisher_metadata` under a transaction, rejecting another platform before schema writes. Use `FACEBOOK_DATABASE_PATH`, `INSTAGRAM_DATABASE_PATH`, or `MASTODON_DATABASE_PATH`; each uses shared `.env > environment` resolution. These keys take precedence over deprecated `DATABASE_PATH` (once-per-process warning), then defaults; relative values resolve against the platform default database directory, not CWD. In a source checkout, defaults remain anchored at `REPO/PLATFORM/PLATFORM_posts.sqlite3` to reuse existing state. Outside a checkout, defaults are `$XDG_DATA_HOME/kulturbytes-social/PLATFORM_posts.sqlite3` or `~/.local/share/kulturbytes-social/PLATFORM_posts.sqlite3`. Absolute overrides are used directly. Existing non-default databases must be selected explicitly when migrating; never silently copy or merge them. Parent directories are created only during database initialization. Dry run may create the database and tables but does not reserve an attempt or record a publication.
 
 Default names:
 
@@ -463,9 +463,77 @@ CREATE TABLE IF NOT EXISTS published_events (
 
 Only write the publication record after the remote platform confirms success.
 
-All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed repeat publication with `--include-published` replaces the stored remote publication ID (and Mastodon status URL), updates event metadata, and refreshes `published_at` after remote success. Each date retains only its latest publication; failed remote publication leaves the existing record unchanged.
+All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed repeat publication with `--include-published` replaces the stored remote publication ID (and Mastodon status URL), updates event metadata, and refreshes `published_at` after remote success. The legacy table retains the latest publication per date; the new journal retains each attempt. Failed remote publication leaves the existing legacy record unchanged.
 
 ---
+
+## Boundary validation, media security and read retries
+
+- `models.py` validates discovery and detail responses with strict Pydantic models;
+  publishers receive `model_dump(exclude_unset=True)` dictionaries for compatibility.
+  Model only consumed fields. Optional fields may be absent or null. Identifiers are
+  bounded non-empty safe path segments, not UUID objects, to retain opaque/simplified IDs.
+- Invalid discovery envelopes fail; malformed individual records are reported/skipped.
+  An invalid matching direct target fails nonzero even if a valid sibling matches too.
+  Event UUID, date UUID and slug must match the validated detail response before publishing.
+  Keep the list-summary/detail-description precedence.
+- `timezone.application_today()` is the only business-day clock and uses Europe/Berlin.
+- All media downloads and Instagram's JPEG check use `media_security.media_response`.
+  Allow HTTPS only, reject credentials/non-global literals and reject a host if any
+  resolved address is unsafe. Validate immediately before every attempt and each of
+  at most five explicit redirects; never blindly follow media redirects. No real DNS in tests.
+- This DNS preflight is not transport IP pinning. DNS rebinding between validation
+  and connection, proxy-side resolution and Instagram's later server-side fetch are
+  residual limits. Do not claim complete protection against these cases. No custom
+  sockets or download-size limits are introduced here; issue #6 remains open.
+- `http.safe_get` reuses the caller's client, disables automatic redirects, and tries
+  at most three times on 429/502/503/504 or ConnectTimeout/ReadTimeout/ConnectError.
+  Backoff is 0.5/1 seconds; Retry-After integer/HTTP-date is clamped to 0–5 seconds.
+  Default network-phase timeout is five seconds, not a total DNS/download deadline.
+  Streaming retries cover request/header acquisition; failures while consuming a body
+  fail closed without resume. Keep existing application polling intervals separate.
+- No publishing POST retries, including image uploads and Instagram containers.
+  Workflow errors must not print raw third-party exceptions or credential-bearing URLs.
+  Authenticated API payloads go through shared redaction; journal errors store only classes.
+
+## Publication attempts and concurrency
+
+`publications.py` owns one shared state mechanism for all publishers. Initialize
+`publication_attempts` alongside the platform's existing `published_events`, without
+removing legacy rows. Journal fields include attempt UUID, platform, date/event UUID,
+state, remote ID/URL, error class, timestamps and a minimal metadata snapshot for recovery.
+Never store credentials or the social body in this snapshot.
+
+After per-event confirmation, `execute_publication` atomically reserves the date.
+`reserve_attempt` uses `BEGIN IMMEDIATE`, rechecks completed deduplication unless an
+explicit repeat was confirmed, and a partial unique index on `(platform, date_uuid)`
+for states `reserved`, `publishing`, `remote_succeeded`. `begin_remote_mutation` commits
+`publishing` before each actual content-creation POST. Transactions do not span remote
+requests. `busy_timeout=5000` and foreign keys are enabled; existing journal mode is
+retained instead of forcing WAL.
+
+State flow: `reserved → publishing → remote_succeeded → published`. Record returned
+post IDs immediately before finalizing the legacy publication row. A failure before
+remote mutation or a definitive rejection may become `failed`; a transport error or
+uncertain remote outcome stays active. Never downgrade confirmed remote success.
+If finalization fails, retain `remote_succeeded`; if saving even the returned ID fails,
+the prior durable reservation remains active and the error reports the ID. A crash
+between remote success and its local persistence is still ambiguous; no distributed
+transaction or exactly-once guarantee is claimed.
+
+Unresolved attempts block selection and reservation, including `--include-published`.
+There is no automatic expiration. Dry runs and declined confirmations create no attempt.
+Completed explicit repeats create a new attempt UUID and update the latest legacy row.
+Different platform databases and different dates can proceed independently.
+
+The root CLI provides `attempts list --platform PLATFORM` and
+`attempts resolve --platform PLATFORM ATTEMPT_UUID --outcome published|failed`.
+Recovery is local, requires no token and never calls a platform API. The operator must
+stop the worker and inspect the platform first, then explicitly confirm the result.
+Use the stored remote ID for `remote_succeeded`; otherwise `published` requires
+`--remote-id` (optional Mastodon `--remote-url`). `failed` may release only a reserved
+or publishing attempt with confirmed absence of a remote post. Never automatically
+clear reservations or delete remote posts. See README for operational examples.
 
 ## Social hashtags
 
@@ -998,7 +1066,7 @@ __pycache__/
 FACEBOOK_PAGE_ID=
 META_SYSTEM_USER_ACCESS_TOKEN=
 FACEBOOK_GRAPH_API_VERSION=v26.0
-DATABASE_PATH=facebook_posts.sqlite3
+FACEBOOK_DATABASE_PATH=facebook_posts.sqlite3
 ```
 
 ### Mastodon
@@ -1006,7 +1074,7 @@ DATABASE_PATH=facebook_posts.sqlite3
 ```env
 MASTODON_BASE_URL=https://norden.social
 MASTODON_ACCESS_TOKEN=
-DATABASE_PATH=mastodon_posts.sqlite3
+MASTODON_DATABASE_PATH=mastodon_posts.sqlite3
 ```
 
 Do not include real secrets in `.env.example`. All publishers read authentication settings from the deterministic `.env` before process environment.
@@ -1075,7 +1143,7 @@ uv run --all-packages python -m unittest discover -s tests -v
 
 They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, filtering/sorting/limits, and confirmed repeat publications (updated IDs, metadata, timestamps, and unchanged records on remote failure). Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
 
-Additional coverage is still needed for Markdown normalization, malformed dates, platform HTTP errors, and media processing. Do not use live social publishing in automated tests.
+Tests in `test_api_models.py`, `test_media_security.py`, `test_http_retry.py`, `test_timezone.py`, `test_database_paths.py`, `test_publication_journal.py` and `test_concurrency.py` cover boundary validation, SSRF/redirects, retries, Berlin dates, schema ownership, actual mocked POSTs, SQLite finalization failure/recovery and separate-connection reservations. Mock DNS and sleep; use fresh databases for uncertain-failure subcases so reservations do not hide later cases. Do not use live social publishing in automated tests. Full Markdown support, download sizes and reliable Mastodon media processing remain gaps.
 
 ---
 
@@ -1086,13 +1154,19 @@ The shared implementation already exists as a `uv` workspace:
 ```text
 pyproject.toml                 # root application, public script, workspace members
 src/kulturbytes_social/cli.py   # root Click group and command registration
+src/kulturbytes_social/attempts.py # explicit local publication recovery
 uv.lock                        # shared lockfile
 common/src/kulturbytes_common/
     events.py                  # API reads, dates, URLs, hashtags, prices
     media.py                   # image URLs and downloads
     formatting.py              # Markdown normalization
     selection.py               # interactive selection
-    database.py                # duplicate lookup
+    database.py                # paths, schema ownership, duplicate lookup
+    models.py                  # strict API boundary
+    timezone.py                # Berlin business clock
+    http.py                    # safe GET retries
+    media_security.py          # public HTTPS / DNS / redirects
+    publications.py            # journal, reservations, recovery
     workflow.py                # shared filtering and publishing loop
 facebook/
     src/kulturbytes_facebook/cli.py

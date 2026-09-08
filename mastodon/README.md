@@ -35,13 +35,13 @@ Alle weiteren Startbefehle auf dieser Seite führst du im Repository-Hauptordner
 Token und Instanzadresse verwenden dieselben zentralen Resolver wie die anderen
 Publisher: **`.env > Prozess-Environment > OS-Keyring`** für den Token und
 **`.env > Prozess-Environment > Standard`** für `MASTODON_BASE_URL`.
-`DATABASE_PATH` bleibt eine Environment-Einstellung.
+`MASTODON_DATABASE_PATH` folgt ebenfalls `.env` vor Prozessumgebung.
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `MASTODON_BASE_URL` | Adresse deiner Mastodon-Instanz | `https://norden.social` |
 | `MASTODON_ACCESS_TOKEN` | Access Token für dein Konto auf dieser Instanz | für `--publish` und `--check-auth` erforderlich |
-| `DATABASE_PATH` | Pfad zur lokalen Datenbank | `mastodon_posts.sqlite3` |
+| `MASTODON_DATABASE_PATH` | Pfad zur lokalen Datenbank | `mastodon_posts.sqlite3` |
 
 Zugangsdaten werden erst für `--publish` und `--check-auth` geladen.
 `--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
@@ -225,7 +225,7 @@ erfolgreichen Veröffentlichung speichert er die Termin-ID (`date_uuid`),
 Veranstaltungsdaten und die Mastodon-Status-ID und gegebenenfalls die Status-URL.
 So erkennt er beim nächsten Lauf bereits veröffentlichte Termine.
 
-Behalte diese Datenbank bei einem Umzug oder Update. Mit `DATABASE_PATH` kannst
+Behalte diese Datenbank bei einem Umzug oder Update. Mit `MASTODON_DATABASE_PATH` kannst
 du einen anderen Pfad festlegen. Relative Werte beziehen sich auf das Verzeichnis
 der Standarddatenbank, absolute Werte werden unverändert verwendet. Facebook und Mastodon benötigen
 jeweils eine eigene Datenbank.
@@ -234,7 +234,7 @@ jeweils eine eigene Datenbank.
 Veröffentlichung eines bekannten Termins. Nach erfolgreicher Veröffentlichung
 ersetzt der neue Eintrag die gespeicherte Mastodon-Status-ID und die Status-URL
 für dieselbe `date_uuid` und aktualisiert Veranstaltungsdaten und `published_at`.
-Es wird nur die letzte Veröffentlichung gespeichert. Schlägt die Veröffentlichung
+`published_events` speichert die letzte Veröffentlichung; das Journal bewahrt alle Versuche. Schlägt die Veröffentlichung
 auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 
 ## Hilfe bei Problemen
@@ -246,7 +246,7 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 | Es stehen keine Termine zur Auswahl | Prüfe den Stadtfilter. Bereits veröffentlichte Termine siehst du mit `--include-published`; vergangene oder nicht freigegebene Termine werden ausgefiltert. |
 | Mastodon lehnt die Veröffentlichung ab | Prüfe die ausgegebene API-Antwort und ob der Access Token zur eingestellten Instanz gehört und Beiträge veröffentlichen darf. |
 | Der Bild-Upload schlägt fehl | Prüfe die Bildadresse aus der Vorschau und ob der Token Medien hochladen darf. |
-| Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `DATABASE_PATH` existiert und beschreibbar ist. |
+| Die Datenbank lässt sich nicht öffnen | Prüfe, ob der übergeordnete Ordner von `MASTODON_DATABASE_PATH` existiert und beschreibbar ist. |
 
 Die verfügbaren Optionen zeigt `uv run kulturbytes-social mastodon --help` auch ohne Zugangsdaten.
 
@@ -263,3 +263,25 @@ Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 ## Lizenz
 
 [AGPL-3.0](../LICENSE)
+
+## Gemeinsame Schutzmechanismen
+
+Der plattformspezifische Datenbankpfad folgt `.env` vor Prozessumgebung. Fehlt er,
+gilt noch `DATABASE_PATH` mit Veraltungswarnung, danach der bisherige Standard.
+Ein fremdes Plattform-Schema wird abgelehnt. Bestehende Veröffentlichungen bleiben
+bei der automatischen Ergänzung von `publisher_metadata`, `publication_attempts`
+und dem eindeutigen Reservierungsindex erhalten.
+
+API-Antworten werden vor der Verwendung validiert; „heute“ meint `Europe/Berlin`.
+Bildabrufe verwenden die gemeinsame HTTPS-/DNS-/Redirect-Prüfung. Sichere GETs
+haben höchstens drei Versuche mit begrenzter Pause; veröffentlichende POSTs werden
+nie automatisch wiederholt. Die DNS-Prüfung ist keine Bindung der tatsächlichen
+Verbindung an eine bestimmte IP. Größenlimits bleiben in Issue #6 offen.
+
+Jeder bestätigte Publish-Versuch reserviert den Termin vor dem Remote-Aufruf.
+Remote-Erfolg wird vor der abschließenden lokalen Speicherung journalisiert.
+Unklare oder teilweise abgeschlossene Versuche blockieren auch `--include-published`
+bis zur manuellen Auflösung. Dry-Runs und abgelehnte Bestätigungen reservieren nichts.
+Die [Projektanleitung](../README.md#veröffentlichungsjournal-und-wiederherstellung)
+beschreibt `kulturbytes-social attempts list` und `attempts resolve`, einschließlich
+der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.

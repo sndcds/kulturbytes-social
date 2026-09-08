@@ -91,8 +91,27 @@ def init_journal(conn: sqlite3.Connection) -> None:
         WHERE state IN ('reserved','publishing','remote_succeeded')''')
 
 
-def list_attempts(conn: sqlite3.Connection) -> list[dict]:
-    cursor = conn.execute('SELECT * FROM publication_attempts ORDER BY created_at, rowid')
+def list_attempts(conn: sqlite3.Connection, *, state: str | None = None, active: bool = False,
+                  date_uuid: str | None = None, limit: int = 50) -> list[dict]:
+    """Newest attempts first; filter/limit inside SQLite, never load the entire journal."""
+    if state is not None and state not in STATES:
+        raise click.ClickException('Unbekannter Veröffentlichungszustand.')
+    if active and state and state not in ACTIVE:
+        raise click.ClickException('--active kann nicht mit einem abgeschlossenen --state kombiniert werden.')
+    if limit < 0:
+        raise click.ClickException('--limit muss mindestens 0 sein.')
+    conditions, values = [], []
+    if state:
+        conditions.append('state=?')
+        values.append(state)
+    if active:
+        conditions.append("state IN ('reserved','publishing','remote_succeeded')")
+    if date_uuid:
+        conditions.append('date_uuid=?')
+        values.append(date_uuid)
+    where = ' WHERE ' + ' AND '.join(conditions) if conditions else ''
+    cursor = conn.execute('SELECT * FROM publication_attempts' + where
+                          + ' ORDER BY created_at DESC, rowid DESC LIMIT ?', (*values, limit or -1))
     names = [column[0] for column in cursor.description]
     return [dict(zip(names, row)) for row in cursor.fetchall()]
 

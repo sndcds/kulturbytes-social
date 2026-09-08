@@ -3,7 +3,7 @@ from importlib import import_module
 
 import click
 
-from kulturbytes_common.publications import describe_attempt, get_attempt, list_attempts, resolve_attempt
+from kulturbytes_common.publications import describe_attempt, get_attempt, list_attempts, resolve_attempt, STATES
 
 PLATFORMS = click.Choice(['facebook', 'instagram', 'mastodon'])
 
@@ -15,12 +15,16 @@ def attempts_command() -> None:
 
 @attempts_command.command('list')
 @click.option('--platform', type=PLATFORMS, required=True)
-def show_attempts(platform: str) -> None:
+@click.option('--state', type=click.Choice(STATES), default=None, help='Nach Zustand filtern.')
+@click.option('--active', is_flag=True, help='Nur reserved, publishing und remote_succeeded.')
+@click.option('--date-uuid', default=None, help='Nur Versuche dieses Termins.')
+@click.option('--limit', type=click.IntRange(min=0), default=50, show_default=True, help='Neueste N Versuche; 0 zeigt alle.')
+def show_attempts(platform: str, state: str | None, active: bool, date_uuid: str | None, limit: int) -> None:
     """Versuche einschließlich Remote-IDs anzeigen (nur lokale Daten)."""
     module = import_module(f'kulturbytes_{platform}.cli')
     conn = module.init_database()
     try:
-        rows = list_attempts(conn)
+        rows = list_attempts(conn, state=state, active=active, date_uuid=date_uuid, limit=limit)
         for row in rows:
             click.echo(describe_attempt(row))
         if not rows:

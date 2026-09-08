@@ -38,7 +38,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
         begin_remote_mutation("facebook_feed")
         # Publishing intent is visible from another connection before the mutation.
         with sqlite3.connect(self.db) as observer:
-            self.assertEqual(list_attempts(observer)[-1]['state'], 'publishing')
+            self.assertEqual(list_attempts(observer)[0]['state'], 'publishing')
         return '123', None
 
     def test_success_repeat_and_legacy_records(self):
@@ -80,7 +80,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
         with self.assertRaises(click.ClickException) as error:
             execute_publication(self.conn, 'facebook', EVENT, timeout, self.finalize)
         self.assertNotIn('credential', str(error.exception))
-        self.assertEqual(list_attempts(self.conn)[-1]['state'], 'publishing')
+        self.assertEqual(list_attempts(self.conn)[0]['state'], 'publishing')
         with self.assertRaises(click.ClickException):
             reserve_attempt(self.conn, 'facebook', EVENT, allow_repeat=True)
 

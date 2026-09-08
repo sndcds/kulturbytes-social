@@ -6,7 +6,7 @@ from urllib.parse import quote, quote_plus, urlsplit
 
 import click
 import httpx
-from .publications import RemoteRejected
+from .errors import RemoteRejected
 from kulturbytes_common.http import safe_get
 
 

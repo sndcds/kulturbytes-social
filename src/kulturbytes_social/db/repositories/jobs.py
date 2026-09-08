@@ -1,12 +1,13 @@
 from uuid import UUID
 from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 from kulturbytes_common.errors import NotFound, PublicationConflict
 from kulturbytes_social.db.models import Job, record, now
 from kulturbytes_social.db.session import transaction
 
 
 class JobRepository:
-    def __init__(self, factory) -> None:
+    def __init__(self, factory: sessionmaker[Session]) -> None:
         self.factory = factory
 
     def create(self, payload: dict) -> dict:

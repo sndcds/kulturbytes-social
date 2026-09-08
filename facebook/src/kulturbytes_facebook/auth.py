@@ -113,7 +113,7 @@ def resolve_page_access_token(client: httpx.Client, *, user_access_token: str,
     raise click.ClickException('Facebook: Zu viele Seiten der Pagination.')
 
 
-def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False, secrets: list[str] | None = None) -> str:
+def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False, secrets: list[str] | None = None, allow_prompt: bool = True) -> str:
     warn_legacy('Facebook')
     page_token = None if force else optional_credential(FACEBOOK_PAGE)
     secrets = secrets if secrets is not None else []
@@ -135,7 +135,7 @@ def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False,
                 click.echo('✓ Facebook Token gültig')
                 click.echo(redact(f'✓ Seite erreichbar: {name} ({page_id})', page_token))
                 return page_token
-        tty = interactive()
+        tty = allow_prompt and interactive()
         if tty and not force and not click.confirm('Mit einem User Access Token wiederherstellen?', default=False):
             raise click.ClickException('Facebook: Wiederherstellung abgebrochen.')
         user_token = optional_credential(FACEBOOK_USER)
@@ -162,10 +162,10 @@ def authenticate_legacy_page(page_id: str, version: str, *, force: bool = False,
 
 
 def authenticate_page(page_id: str, version: str, *, force: bool = False,
-                      secrets: list[str] | None = None) -> str:
-    candidate = meta_candidate((FACEBOOK_PAGE, FACEBOOK_USER))
+                      secrets: list[str] | None = None, allow_prompt: bool = True) -> str:
+    candidate = meta_candidate((FACEBOOK_PAGE, FACEBOOK_USER), allow_prompt=allow_prompt)
     if candidate is None:
-        return authenticate_legacy_page(page_id, version, force=force, secrets=secrets)
+        return authenticate_legacy_page(page_id, version, force=force, secrets=secrets, allow_prompt=allow_prompt)
     system_token = candidate.value
     secrets = secrets if secrets is not None else []
     secrets.append(system_token)

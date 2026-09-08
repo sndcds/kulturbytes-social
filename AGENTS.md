@@ -247,7 +247,7 @@ or filtered targets and direct publication failures return a nonzero exit code.
 Dry run should be the safe default for interactive commands.
 
 Run from `facebook/`, `mastodon/`, or `instagram/` (there is no root `main.py`).
-Facebook and Mastodon require their access-token environment variables at import time, including for dry run and `--help`; Facebook also requires `FACEBOOK_PAGE_ID`. `.env` files are not loaded automatically. Instagram requires credentials only for publishing; its dry run and help work without credentials.
+All three publishers load social credentials lazily through `load_config()` and frozen configuration dataclasses whose token fields use `repr=False`. Imports, dry run, and `--help` work without credentials. `--publish` validates required credentials before event discovery or database initialization. `.env` files are not loaded automatically.
 
 CLI style:
 
@@ -273,6 +273,23 @@ A dry run should:
 - not write a successful publication record to SQLite.
 
 ---
+
+## Authentication preflight
+
+All platform CLIs support `uv run main.py --check-auth` from their platform directory.
+It takes precedence over `--publish`, `--dry-run`, and event-selection options;
+no event discovery, prompts, image reads/uploads, media containers, remote content
+creation, or database access may occur. Missing/invalid configuration or failed
+account validation exits nonzero; success displays the page/account name and exits 0.
+For example, success displays `✓ Facebook Token gültig`; an expired Meta token
+(code 190, subcode 463) reports `Facebook Access Token ist abgelaufen.`
+
+- Facebook: GET the configured version/page ID with `fields=id,name`; require the returned ID to match and a non-empty name.
+- Mastodon: GET `/api/v1/accounts/verify_credentials`; require account ID and acct/username.
+- Instagram: GET the configured version/user ID with `fields=id,username`, using the existing login-mode host; require matching ID and non-empty username.
+- Validate numeric Meta IDs, Graph version format, Instagram login type, and an HTTP(S) Mastodon origin without embedded credentials, path, query, or fragment.
+- Use Bearer headers, no redirects or retries, and shared redaction from `kulturbytes_common.auth`. Never display tokens, including API-echoed values and encoded forms. Transport failures must not print raw exception text.
+- This read-only check validates account access, not all publishing permissions. Do not add token refresh, OAuth flows, or token persistence.
 
 ## SQLite deduplication
 
@@ -656,7 +673,7 @@ confirmation and dry-run behavior aligned with the other platforms.
   and the appropriate Facebook Login permissions, including `instagram_basic` and
   `instagram_content_publish`. See `instagram/README.md` for setup.
 - `INSTAGRAM_USER_ID` is the numeric Instagram account ID for the selected login flow;
-  `INSTAGRAM_ACCESS_TOKEN` must match it. Neither is required for preview/help.
+  `INSTAGRAM_ACCESS_TOKEN` must match it. Neither is required for preview/help; both are required for `--publish` and `--check-auth`.
   `INSTAGRAM_GRAPH_API_VERSION` defaults to `v26.0`, matching the project's Meta version default.
 - The caption has an application limit of 2,200 characters and up to five generated
   hashtags, prioritizing Kulturbytes and city. Trim summary first, preserve the full
@@ -736,7 +753,7 @@ All external API calls should use:
 response.raise_for_status()
 ```
 
-and report the response payload on failure after redacting secrets. This is a target requirement: current Kulturbytes/image requests do not print response bodies, media polling does not call `raise_for_status()`, and Facebook and Mastodon error helpers do not implement explicit secret redaction. Instagram redacts its configured token in API error payloads and sends it only as an Authorization header.
+and report the response payload on failure after redacting secrets. This is a target requirement: current Kulturbytes/image requests do not print response bodies, media polling does not call `raise_for_status()`, while authenticated Facebook and Mastodon publication responses and all authentication preflights use shared secret redaction. Instagram also uses shared redaction for API error payloads. All three send tokens as Authorization headers.
 
 Good error output includes:
 

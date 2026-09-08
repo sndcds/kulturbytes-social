@@ -7,11 +7,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from urllib.parse import quote, quote_plus, urlsplit
+from urllib.parse import urlsplit
 
 import click
 import httpx
 
+from kulturbytes_common.auth import check_auth_request, redact
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -34,7 +35,7 @@ class InstagramConfig:
 
 
 def load_config() -> InstagramConfig:
-    """Credentials are needed only for publishing; dry run works without them."""
+    """Credentials are needed for publishing and auth checks; dry run works without them."""
     user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
     token = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
     login = os.getenv("INSTAGRAM_LOGIN_TYPE", "instagram").strip().lower()
@@ -46,7 +47,7 @@ def load_config() -> InstagramConfig:
     hosts = {"instagram": "graph.instagram.com", "facebook": "graph.facebook.com"}
     if login not in hosts:
         raise click.ClickException("INSTAGRAM_LOGIN_TYPE muss instagram oder facebook sein.")
-    if not re.fullmatch(r"v\d+\.\d+", version):
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+", version):
         raise click.ClickException("INSTAGRAM_GRAPH_API_VERSION muss z.B. v26.0 sein.")
     return InstagramConfig(user_id, token, f"https://{hosts[login]}/{version}")
 
@@ -133,11 +134,20 @@ def build_instagram_caption(event: dict) -> str:
     return fixed
 
 
-def redact(text: str, token: str) -> str:
-    for secret in {token, quote(token, safe=""), quote_plus(token)}:
-        if secret:
-            text = text.replace(secret, "[REDACTED]")
-    return text
+def check_auth(config: InstagramConfig) -> None:
+    payload = check_auth_request(
+        "Instagram", f"{config.base_url}/{config.user_id}", config.access_token,
+        params={"fields": "id,username"},
+    )
+    if str(payload.get("id")) != config.user_id:
+        raise click.ClickException("Instagram: Zurückgegebene Konto-ID stimmt nicht mit INSTAGRAM_USER_ID überein.")
+    username = payload.get("username")
+    if not isinstance(username, str) or not username.strip():
+        raise click.ClickException("Instagram: Die Antwort enthält keinen Benutzernamen.")
+    login = "facebook" if urlsplit(config.base_url).hostname == "graph.facebook.com" else "instagram"
+    click.echo("✓ Instagram Token gültig")
+    click.echo(redact(f"✓ Konto: @{username}", config.access_token))
+    click.echo(f"✓ Login-Typ: {login}")
 
 
 def instagram_request(
@@ -242,14 +252,18 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, d
 
 
 @click.command()
+@click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option("--dry-run/--publish", default=True, help="Vorschau (Standard) oder nach Bestätigung veröffentlichen.")
 @click.option("--limit", type=click.IntRange(min=0), default=50, show_default=True, help="Termine in der Auswahl; 0 zeigt alle.")
 @click.option("--include-published", is_flag=True, help="Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten.")
 @click.option("--city", default=None, help="Nach Stadt filtern, z.B. Flensburg.")
 @click.option("--event-uuid", default=None, help="Event-UUID für die direkte Terminauswahl.")
 @click.option("--date-identifier", default=None, help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.")
-def main(dry_run: bool, limit: int, include_published: bool, city: str | None,
+def main(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
          event_uuid: str | None, date_identifier: str | None) -> None:
+    if check_auth_only:
+        check_auth(load_config())
+        return
     if not dry_run:
         load_config()
     run_publisher(

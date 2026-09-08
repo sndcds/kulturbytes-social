@@ -66,8 +66,8 @@ diese Instagram-Rechte nicht automatisch. Siehe
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `INSTAGRAM_USER_ID` | Numerische Instagram-Konto-ID des gewählten Login-Verfahrens | erforderlich für `--publish` |
-| `INSTAGRAM_ACCESS_TOKEN` | Passender Access Token | erforderlich für `--publish` |
+| `INSTAGRAM_USER_ID` | Numerische Instagram-Konto-ID des gewählten Login-Verfahrens | erforderlich für `--publish` und `--check-auth` |
+| `INSTAGRAM_ACCESS_TOKEN` | Passender Access Token | erforderlich für `--publish` und `--check-auth` |
 | `INSTAGRAM_LOGIN_TYPE` | `instagram` oder `facebook` | `instagram` |
 | `INSTAGRAM_GRAPH_API_VERSION` | Graph-API-Version für deine App | `v26.0` |
 | `DATABASE_PATH` | Eigene SQLite-Datenbank | `instagram_posts.sqlite3` |
@@ -76,11 +76,43 @@ diese Instagram-Rechte nicht automatisch. Siehe
 der neuesten API-Version. `.env`-Dateien werden nicht automatisch geladen.
 Tokens gehören nicht in versionierte Dateien oder geteilte Terminal-Ausgaben.
 
+## Zugang ohne Veröffentlichung prüfen
+
+Im Ordner `instagram/`, nach dem Setzen der Zugangsdaten:
+
+```bash
+uv run main.py --check-auth
+```
+
+Beispiel einer erfolgreichen Prüfung (Exitcode 0):
+
+```text
+✓ Instagram Token gültig
+✓ Konto: @kulturbytes
+✓ Login-Typ: facebook
+```
+
+Bei Fehlern endet der Check mit Exitcode 1, zum Beispiel `Error: Instagram-Zugriff konnte nicht validiert werden.`
+API-Fehler können zusätzlich HTTP-Status und bereinigte Details enthalten.
+Tokens werden niemals angezeigt, auch wenn die API sie zurückgibt.
+
+`--check-auth` hat Vorrang vor `--publish`, `--dry-run` und Auswahloptionen.
+Es werden keine Kulturbytes-Termine geladen, keine Bilder oder Mediencontainer
+erzeugt und keine Beiträge oder Datenbankeinträge geschrieben. Der Check verwendet
+nur `GET /{version}/{user_id}?fields=id,username`. Ein erfolgreicher Lesezugriff bestätigt den Kontozugriff,
+aber nicht sämtliche Veröffentlichungsrechte. Siehe [Meta Instagram API](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api).
+
+Der Graph-Host folgt `INSTAGRAM_LOGIN_TYPE`: `graph.instagram.com` für
+`instagram`, `graph.facebook.com` für `facebook`. Die zurückgegebene Konto-ID
+muss mit `INSTAGRAM_USER_ID` übereinstimmen. Hilfe und Dry-Run benötigen keine Tokens;
+`--publish` prüft die erforderliche Konfiguration vor der Event-Abfrage.
+
 ## Auswahloptionen
 
 | Option | Wirkung |
 |---|---|
 | `--dry-run` | Vorschau und Bildprüfung, Standard |
+| `--check-auth` | Nur Zugang prüfen, ohne Veröffentlichung |
 | `--publish` | Nach Bestätigung veröffentlichen |
 | `--limit N` | Anzahl angebotener Termine; Standard 50, 0 zeigt alle |
 | `--city Flensburg` | Stadtfilter ohne Beachtung der Groß-/Kleinschreibung |

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import httpx
 from click.testing import CliRunner
 
-from test_publishers import EVENT, SUMMARY, FACEBOOK, MASTODON
+from test_publishers import EVENT, SUMMARY, FACEBOOK, MASTODON, ENV as PUBLISHER_ENV
 from test_instagram import ENV, instagram
 
 PLATFORMS = [FACEBOOK, MASTODON, instagram]
@@ -34,7 +34,7 @@ class DateIdentityTests(unittest.TestCase):
             return httpx.Response(200, json={'data': details[len(requests) - 2]})
 
         client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.dict(os.environ, ENV), patch.object(module, 'DATABASE_PATH', database), patch(
+        with patch.dict(os.environ, {**PUBLISHER_ENV, **ENV}, clear=True), patch.object(module, 'DATABASE_PATH', database), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client,
         ), patch.object(module, 'publish_event', return_value=True) as publish:
             result = CliRunner().invoke(module.main, args, input=user_input)

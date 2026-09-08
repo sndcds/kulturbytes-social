@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import sqlite3
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 import click
 import httpx
 
+from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.events import (
     build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -15,13 +18,41 @@ from kulturbytes_common.media import download_image, get_image_url
 from kulturbytes_common.workflow import run_publisher
 
 
-FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
-FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
+@dataclass(frozen=True)
+class FacebookConfig:
+    page_id: str
+    access_token: str = field(repr=False)
+    graph_api_version: str
 
-FACEBOOK_GRAPH_API_VERSION = os.getenv(
-    "FACEBOOK_GRAPH_API_VERSION",
-    "v26.0",
-)
+
+def load_config() -> FacebookConfig:
+    page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip()
+    token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "").strip()
+    version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v26.0").strip()
+    if not page_id:
+        raise click.ClickException("FACEBOOK_PAGE_ID fehlt.")
+    if not token:
+        raise click.ClickException("FACEBOOK_PAGE_ACCESS_TOKEN fehlt.")
+    if not page_id.isascii() or not page_id.isdigit():
+        raise click.ClickException("FACEBOOK_PAGE_ID muss eine numerische Seiten-ID sein.")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+", version):
+        raise click.ClickException("FACEBOOK_GRAPH_API_VERSION muss z.B. v26.0 sein.")
+    return FacebookConfig(page_id, token, version)
+
+
+def check_auth(config: FacebookConfig) -> None:
+    payload = check_auth_request(
+        "Facebook", f"https://graph.facebook.com/{config.graph_api_version}/{config.page_id}",
+        config.access_token, params={"fields": "id,name"},
+    )
+    if str(payload.get("id")) != config.page_id:
+        raise click.ClickException("Facebook: Zurückgegebene Seiten-ID stimmt nicht mit FACEBOOK_PAGE_ID überein.")
+    name = payload.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise click.ClickException("Facebook: Die Antwort enthält keinen Seitennamen.")
+    click.echo("✓ Facebook Token gültig")
+    click.echo(redact(f"✓ Seite erreichbar: {name} ({config.page_id})", config.access_token))
+
 
 DATABASE_PATH = Path(
     os.getenv(
@@ -270,32 +301,11 @@ def print_event_preview(
     click.echo("=" * 80)
 
 
-def facebook_request_error(
-    response: httpx.Response,
-) -> None:
-    click.echo()
-    click.echo(
-        "Facebook API error:"
-    )
-
-    click.echo(
-        f"Status: {response.status_code}"
-    )
-
-    try:
-        click.echo(
-            str(response.json())
-        )
-    except ValueError:
-        click.echo(
-            response.text
-        )
-
-
 def publish_facebook_photo(
     client: httpx.Client,
     event: dict,
 ) -> str:
+    config = load_config()
     (
         image_bytes,
         content_type,
@@ -307,18 +317,17 @@ def publish_facebook_photo(
 
     url = (
         "https://graph.facebook.com/"
-        f"{FACEBOOK_GRAPH_API_VERSION}/"
-        f"{FACEBOOK_PAGE_ID}/photos"
+        f"{config.graph_api_version}/"
+        f"{config.page_id}/photos"
     )
 
     response = client.post(
         url,
+        headers={"Authorization": f"Bearer {config.access_token}"},
+        follow_redirects=False,
         data={
             "caption": build_message(
                 event
-            ),
-            "access_token": (
-                FACEBOOK_PAGE_ACCESS_TOKEN
             ),
         },
         files={
@@ -330,14 +339,7 @@ def publish_facebook_photo(
         },
     )
 
-    if response.is_error:
-        facebook_request_error(
-            response
-        )
-
-        response.raise_for_status()
-
-    payload = response.json()
+    payload = response_payload(response, "Facebook", config.access_token)
 
     post_id = (
         payload.get("post_id")
@@ -348,7 +350,7 @@ def publish_facebook_photo(
         raise RuntimeError(
             "Facebook hat keine "
             "Post-ID zurückgegeben: "
-            f"{payload}"
+            + redact(str(payload), config.access_token)
         )
 
     return str(
@@ -360,32 +362,25 @@ def publish_text_post(
     client: httpx.Client,
     event: dict,
 ) -> str:
+    config = load_config()
     url = (
         "https://graph.facebook.com/"
-        f"{FACEBOOK_GRAPH_API_VERSION}/"
-        f"{FACEBOOK_PAGE_ID}/feed"
+        f"{config.graph_api_version}/"
+        f"{config.page_id}/feed"
     )
 
     response = client.post(
         url,
+        headers={"Authorization": f"Bearer {config.access_token}"},
+        follow_redirects=False,
         data={
             "message": build_message(
                 event
             ),
-            "access_token": (
-                FACEBOOK_PAGE_ACCESS_TOKEN
-            ),
         },
     )
 
-    if response.is_error:
-        facebook_request_error(
-            response
-        )
-
-        response.raise_for_status()
-
-    payload = response.json()
+    payload = response_payload(response, "Facebook", config.access_token)
 
     post_id = payload.get(
         "id"
@@ -395,7 +390,7 @@ def publish_text_post(
         raise RuntimeError(
             "Facebook hat keine "
             "Post-ID zurückgegeben: "
-            f"{payload}"
+            + redact(str(payload), config.access_token)
         )
 
     return str(
@@ -486,6 +481,7 @@ def publish_event(
 
 
 @click.command()
+@click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",
     default=True,
@@ -536,6 +532,7 @@ def publish_event(
     help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
 def main(
+    check_auth_only: bool,
     dry_run: bool,
     limit: int,
     include_published: bool,
@@ -543,6 +540,11 @@ def main(
     event_uuid: str | None,
     date_identifier: str | None,
 ) -> None:
+    if check_auth_only:
+        check_auth(load_config())
+        return
+    if not dry_run:
+        load_config()
     run_publisher(
         conn=init_database(),
         publish_event=publish_event,

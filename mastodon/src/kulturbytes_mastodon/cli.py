@@ -3,12 +3,15 @@
 import os
 import sqlite3
 import time
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 import httpx
 
+from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.events import (
     build_hashtags, format_price, get_event_url, get_start_datetime,
 )
@@ -17,12 +20,43 @@ from kulturbytes_common.media import download_image, get_image_url
 from kulturbytes_common.workflow import run_publisher
 
 
-MASTODON_BASE_URL = os.getenv(
-    "MASTODON_BASE_URL",
-    "https://norden.social",
-).rstrip("/")
+@dataclass(frozen=True)
+class MastodonConfig:
+    base_url: str
+    access_token: str = field(repr=False)
 
-MASTODON_ACCESS_TOKEN = os.environ["MASTODON_ACCESS_TOKEN"]
+
+def load_config() -> MastodonConfig:
+    token = os.getenv("MASTODON_ACCESS_TOKEN", "").strip()
+    base_url = os.getenv("MASTODON_BASE_URL", "https://norden.social").strip().rstrip("/")
+    if not token:
+        raise click.ClickException("MASTODON_ACCESS_TOKEN fehlt.")
+    try:
+        parsed = urlsplit(base_url)
+        valid = (parsed.scheme in {"http", "https"} and parsed.hostname
+                 and not parsed.username and not parsed.password
+                 and not parsed.query and not parsed.fragment and not parsed.path
+                 and not any(character.isspace() for character in base_url))
+        parsed.port  # Reject malformed port numbers too.
+    except ValueError:
+        valid = False
+    if not valid:
+        raise click.ClickException("MASTODON_BASE_URL muss eine HTTP(S)-Instanzadresse ohne Zugangsdaten, Pfad oder Query sein.")
+    return MastodonConfig(base_url, token)
+
+
+def check_auth(config: MastodonConfig) -> None:
+    payload = check_auth_request(
+        "Mastodon", f"{config.base_url}/api/v1/accounts/verify_credentials", config.access_token,
+    )
+    acct = payload.get("acct") or payload.get("username")
+    if not payload.get("id") or not isinstance(acct, str) or not acct.strip():
+        raise click.ClickException("Mastodon: Die Antwort enthält kein gültiges Konto.")
+    if "@" not in acct:
+        acct = f"{acct}@{urlsplit(config.base_url).netloc}"
+    click.echo("✓ Mastodon Token gültig")
+    click.echo(redact(f"✓ Konto: @{acct}", config.access_token))
+
 
 DATABASE_PATH = Path(
     os.getenv(
@@ -291,34 +325,13 @@ def print_event_preview(
     click.echo("=" * 80)
 
 
-def mastodon_request_error(
-    response: httpx.Response,
-) -> None:
-    click.echo()
-    click.echo(
-        "Mastodon API error:"
-    )
-
-    click.echo(
-        f"Status: {response.status_code}"
-    )
-
-    try:
-        click.echo(
-            str(response.json())
-        )
-    except ValueError:
-        click.echo(
-            response.text
-        )
-
-
 def wait_for_media(
     client: httpx.Client,
     media_id: str,
 ) -> None:
+    config = load_config()
     url = (
-        f"{MASTODON_BASE_URL}"
+        f"{config.base_url}"
         f"/api/v1/media/{media_id}"
     )
 
@@ -328,7 +341,7 @@ def wait_for_media(
             headers={
                 "Authorization": (
                     f"Bearer "
-                    f"{MASTODON_ACCESS_TOKEN}"
+                    f"{config.access_token}"
                 ),
             },
         )
@@ -354,6 +367,7 @@ def upload_mastodon_media(
     client: httpx.Client,
     event: dict,
 ) -> str:
+    config = load_config()
     (
         image_bytes,
         content_type,
@@ -364,7 +378,7 @@ def upload_mastodon_media(
     )
 
     url = (
-        f"{MASTODON_BASE_URL}"
+        f"{config.base_url}"
         "/api/v2/media"
     )
 
@@ -373,7 +387,7 @@ def upload_mastodon_media(
         headers={
             "Authorization": (
                 f"Bearer "
-                f"{MASTODON_ACCESS_TOKEN}"
+                f"{config.access_token}"
             ),
         },
         data={
@@ -390,13 +404,7 @@ def upload_mastodon_media(
         },
     )
 
-    if response.is_error:
-        mastodon_request_error(
-            response
-        )
-        response.raise_for_status()
-
-    payload = response.json()
+    payload = response_payload(response, "Mastodon", config.access_token)
 
     media_id = payload.get("id")
 
@@ -404,7 +412,7 @@ def upload_mastodon_media(
         raise RuntimeError(
             "Mastodon hat keine "
             "Media-ID zurückgegeben: "
-            f"{payload}"
+            + redact(str(payload), config.access_token)
         )
 
     return str(media_id)
@@ -414,6 +422,7 @@ def publish_mastodon_status(
     client: httpx.Client,
     event: dict,
 ) -> tuple[str, str | None]:
+    config = load_config()
     media_id = None
 
     if get_image_url(event):
@@ -432,24 +441,20 @@ def publish_mastodon_status(
         data["media_ids[]"] = media_id
 
     response = client.post(
-        f"{MASTODON_BASE_URL}/api/v1/statuses",
+        f"{config.base_url}/api/v1/statuses",
         headers={
-            "Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}",
+            "Authorization": f"Bearer {config.access_token}",
         },
         data=data,
     )
 
-    if response.is_error:
-        mastodon_request_error(response)
-
-    response.raise_for_status()
-    payload = response.json()
+    payload = response_payload(response, "Mastodon", config.access_token)
     status_id = payload.get("id")
 
     if not status_id:
         raise RuntimeError(
             "Mastodon hat keine Status-ID zurückgegeben: "
-            f"{payload}"
+            + redact(str(payload), config.access_token)
         )
 
     return str(status_id), payload.get("url")
@@ -521,6 +526,7 @@ def publish_event(
 
 
 @click.command()
+@click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",
     default=True,
@@ -571,6 +577,7 @@ def publish_event(
     help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
 def main(
+    check_auth_only: bool,
     dry_run: bool,
     limit: int,
     include_published: bool,
@@ -578,6 +585,11 @@ def main(
     event_uuid: str | None,
     date_identifier: str | None,
 ) -> None:
+    if check_auth_only:
+        check_auth(load_config())
+        return
+    if not dry_run:
+        load_config()
     run_publisher(
         conn=init_database(),
         publish_event=publish_event,

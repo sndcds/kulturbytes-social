@@ -5,10 +5,18 @@ description = "Kulturbytes-Veranstaltungen auf sozialen Plattformen veröffentli
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.19.2",
     "click>=8.5.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "kulturbytes-common",
     "kulturbytes-facebook",
     "kulturbytes-instagram",
     "kulturbytes-mastodon",
+    "psycopg[binary]>=3.3.5",
+    "pydantic>=2.13.5",
+    "sqlalchemy>=2",
+    "uvicorn>=0.52.4",
 ]
 
 [project.scripts]
@@ -25,3 +33,4 @@ members = ["common", "facebook", "mastodon", "instagram"]
 kulturbytes-facebook = { workspace = true }
 kulturbytes-mastodon = { workspace = true }
 kulturbytes-instagram = { workspace = true }
+kulturbytes-common = { workspace = true }

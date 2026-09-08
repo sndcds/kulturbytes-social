@@ -79,7 +79,7 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(request.url.path, '/api/event/event-1/date/209901011830')
             return httpx.Response(200, json={'data': EVENT})
         client = httpx.Client(transport=httpx.MockTransport(respond))
-        with patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
+        with patch.object(FACEBOOK, 'authenticate', side_effect=FACEBOOK.load_config), patch.object(MASTODON, 'get_status_limit', return_value=500), patch.dict(os.environ, ENV, clear=True), patch.object(module, 'DATABASE_PATH', Path(directory) / 'posts.sqlite3'), patch(
             'kulturbytes_common.workflow.httpx.Client', return_value=client
         ):
             result = CliRunner().invoke(cli, [module.__name__.split('.')[0].removeprefix('kulturbytes_')] + args, input=user_input)

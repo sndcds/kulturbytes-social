@@ -9,7 +9,8 @@ from datetime import date
 import click
 import httpx
 
-from kulturbytes_common.auth import check_auth_request, redact, response_payload
+from kulturbytes_common.auth import redact, response_payload
+from kulturbytes_facebook.auth import authenticate_page
 from kulturbytes_common.credentials import FACEBOOK_PAGE, credential_options, resolve_credential
 from kulturbytes_common.database import get_database_path
 from kulturbytes_common.events import (
@@ -24,35 +25,34 @@ class FacebookConfig:
     page_id: str
     access_token: str = field(repr=False)
     graph_api_version: str
+    secrets: tuple[str, ...] = field(default=(), repr=False)
 
 
-def load_config() -> FacebookConfig:
+def load_settings() -> tuple[str, str]:
     page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip()
-    token = resolve_credential(FACEBOOK_PAGE)
     version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v26.0").strip()
     if not page_id:
         raise click.ClickException("FACEBOOK_PAGE_ID fehlt.")
-    if not token:
-        raise click.ClickException("FACEBOOK_PAGE_ACCESS_TOKEN fehlt.")
     if not page_id.isascii() or not page_id.isdigit():
         raise click.ClickException("FACEBOOK_PAGE_ID muss eine numerische Seiten-ID sein.")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+", version):
         raise click.ClickException("FACEBOOK_GRAPH_API_VERSION muss z.B. v26.0 sein.")
+    return page_id, version
+
+
+def load_config() -> FacebookConfig:
+    page_id, version = load_settings()
+    token = resolve_credential(FACEBOOK_PAGE)
+    if not token:
+        raise click.ClickException("FACEBOOK_PAGE_ACCESS_TOKEN fehlt.")
     return FacebookConfig(page_id, token, version)
 
 
-def check_auth(config: FacebookConfig) -> None:
-    payload = check_auth_request(
-        "Facebook", f"https://graph.facebook.com/{config.graph_api_version}/{config.page_id}",
-        config.access_token, params={"fields": "id,name"},
-    )
-    if str(payload.get("id")) != config.page_id:
-        raise click.ClickException("Facebook: Zurückgegebene Seiten-ID stimmt nicht mit FACEBOOK_PAGE_ID überein.")
-    name = payload.get("name")
-    if not isinstance(name, str) or not name.strip():
-        raise click.ClickException("Facebook: Die Antwort enthält keinen Seitennamen.")
-    click.echo("✓ Facebook Token gültig")
-    click.echo(redact(f"✓ Seite erreichbar: {name} ({config.page_id})", config.access_token))
+def authenticate(*, force: bool = False) -> FacebookConfig:
+    page_id, version = load_settings()
+    secrets: list[str] = []
+    token = authenticate_page(page_id, version, force=force, secrets=secrets)
+    return FacebookConfig(page_id, token, version, tuple(secrets))
 
 
 DATABASE_PATH = get_database_path("facebook")
@@ -301,8 +301,9 @@ def print_event_preview(
 def publish_facebook_photo(
     client: httpx.Client,
     event: dict,
+    *, config: FacebookConfig | None = None,
 ) -> str:
-    config = load_config()
+    config = config or load_config()
     (
         image_bytes,
         content_type,
@@ -358,8 +359,9 @@ def publish_facebook_photo(
 def publish_text_post(
     client: httpx.Client,
     event: dict,
+    *, config: FacebookConfig | None = None,
 ) -> str:
-    config = load_config()
+    config = config or load_config()
     url = (
         "https://graph.facebook.com/"
         f"{config.graph_api_version}/"
@@ -400,6 +402,7 @@ def publish_event(
     conn: sqlite3.Connection,
     event: dict,
     dry_run: bool,
+    *, config: FacebookConfig | None = None,
 ) -> bool:
     print_event_preview(
         event
@@ -430,6 +433,7 @@ def publish_event(
             publish_facebook_photo(
                 client,
                 event,
+                config=config,
             )
         )
 
@@ -451,6 +455,7 @@ def publish_event(
             publish_text_post(
                 client,
                 event,
+                config=config,
             )
         )
 
@@ -479,6 +484,7 @@ def publish_event(
 
 @click.command("facebook", help="Kulturbytes-Termine für Facebook auswählen, prüfen und veröffentlichen.")
 @credential_options("Facebook")
+@click.option("--resolve-page-token", is_flag=True, help="Page Token über User Token ableiten und prüfen; lädt keine Events und veröffentlicht nichts.")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
     "--dry-run/--publish",
@@ -531,6 +537,7 @@ def publish_event(
 )
 def facebook_command(
     check_auth_only: bool,
+    resolve_page_token: bool,
     dry_run: bool,
     limit: int,
     include_published: bool,
@@ -538,14 +545,24 @@ def facebook_command(
     event_uuid: str | None,
     date_identifier: str | None,
 ) -> None:
-    if check_auth_only:
-        check_auth(load_config())
+    if check_auth_only or resolve_page_token:
+        authenticate(force=resolve_page_token)
         return
-    if not dry_run:
-        load_config()
+    config = authenticate() if not dry_run else None
+
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
+        try:
+            return publish_event(client, conn, event, dry_run=dry_run, config=config)
+        except httpx.RequestError:
+            raise click.ClickException("Facebook: Netzwerkfehler bei der Veröffentlichung.") from None
+        except Exception as exc:
+            message = str(exc)
+            for secret in config.secrets if config else ():
+                message = redact(message, secret)
+            raise click.ClickException(message) from None
     run_publisher(
         conn=init_database(),
-        publish_event=publish_event,
+        publish_event=publish_with_config,
         user_agent="Kulturbytes-Facebook-Publisher/1.2",
         dry_run=dry_run,
         limit=limit,

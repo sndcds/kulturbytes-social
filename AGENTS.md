@@ -278,7 +278,7 @@ A dry run should:
 
 All platform subcommands support `--check-auth`, e.g. `uv run kulturbytes-social facebook --check-auth`.
 It takes precedence over `--publish`, `--dry-run`, and event-selection options;
-no event discovery, prompts, image reads/uploads, media containers, remote content
+no event discovery, image reads/uploads, media containers, remote content
 creation, or database access may occur. Missing/invalid configuration or failed
 account validation exits nonzero; success displays the page/account name and exits 0.
 For example, success displays `✓ Facebook Token gültig`; an expired Meta token
@@ -289,7 +289,7 @@ For example, success displays `✓ Facebook Token gültig`; an expired Meta toke
 - Instagram: GET the configured version/user ID with `fields=id,username`, using the existing login-mode host; require matching ID and non-empty username.
 - Validate numeric Meta IDs, Graph version format, Instagram login type, and an HTTP(S) Mastodon origin without embedded credentials, path, query, or fragment.
 - Use Bearer headers, no redirects or retries, and shared redaction from `kulturbytes_common.auth`. Never display tokens, including API-echoed values and encoded forms. Transport failures must not print raw exception text.
-- This read-only check validates account access, not all publishing permissions. Do not add token refresh or OAuth flows; token persistence is restricted to the explicit OS-keyring management below.
+- This read-only check validates account access, not all publishing permissions. Do not add token refresh or OAuth flows; token persistence is restricted to explicit OS-keyring confirmation or management below. Facebook may prompt for recovery only in a TTY.
 
 ## Optional OS-keyring credentials
 
@@ -301,8 +301,22 @@ Never call `secret-tool` from application code or implement custom encryption.
 Resolution is environment > OS keyring > missing. Even an explicitly empty environment
 variable suppresses keyring access; whitespace-only values count as missing. Generic
 lookup never prompts. Help/imports/dry runs must not touch the keyring. Config loaders
-and auth checks use the same resolver. No Facebook Page Token recovery is currently
-implemented; support storage and resolution of User Tokens without inventing recovery.
+and auth checks use the same resolver. Facebook adds recovery for missing Page Tokens
+or Meta OAuth code 190 (including subcode 463): User Token environment > keyring >
+hidden TTY prompt. Empty environment overrides still suppress keyring lookup.
+Permission codes 10/200 and network/shape/identity errors fail closed. Optional keyring
+lookup failure permits recovery from env or prompt. Interactive recovery requires
+confirmation (default false); non-TTY execution never prompts. `--resolve-page-token`
+explicitly derives and validates a Page Token without events, publishing or database access,
+and takes precedence over publish/selection flags. Resolve the exact configured page ID
+through paginated GET `/me/accounts?fields=id,name,access_token`, using only validated
+cursors at the fixed Graph endpoint. Validate the new token via GET page ID with id/name.
+Only after validation and separate TTY confirmation may the existing keyring Page Token
+be replaced. Never mutate environment or store tokens elsewhere. No User Token refresh
+or OAuth browser login is implemented. Facebook publishing validates/recovers credentials
+before database/event/image access and carries the validated token in memory to publication.
+Dry runs remain credential-free. Auth errors expose status/code, never raw response bodies.
+Regression coverage is in `tests/test_facebook_recovery.py`.
 
 Stable mappings:
 - `kulturbytes-social/facebook`: `page-access-token` (`FACEBOOK_PAGE_ACCESS_TOKEN`), `user-access-token` (`FACEBOOK_USER_ACCESS_TOKEN`).
@@ -313,7 +327,7 @@ Platform subcommands retain `--credentials status|set|delete`
 and `--credential page|user` for Facebook (`access` for the others). Status shows only
 presence according to resolution precedence. Set prompts with `hide_input=True`;
 delete requires confirmation and affects only keyring storage. Reject combinations
-with `--publish` or `--check-auth`; ignore event-selection flags during management.
+with `--publish`, `--check-auth`, or Facebook `--resolve-page-token`; ignore event-selection flags during management.
 No event/network/database operation may run during credential management.
 
 Only OS backends (Secret Service, KWallet, macOS Keychain, Windows Credential Locker,

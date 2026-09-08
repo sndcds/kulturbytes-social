@@ -127,7 +127,17 @@ Ein Desktop-Keyring ist für den Betrieb mit Umgebungsvariablen nicht erforderli
 Seiten-/Konto-IDs, Instanzadresse, Login-Typ und API-Version bleiben Konfiguration
 in Umgebungsvariablen. Die Namen gelten pro Plattform, nicht pro Konto; beim
 Kontowechsel muss auch der gespeicherte Token passen. Facebook-User-Tokens können
-verwaltet werden; eine Page-Token-Wiederherstellung ist derzeit nicht implementiert.
+zur Wiederherstellung eines fehlenden oder abgelaufenen Page Tokens verwendet werden.
+`uv run kulturbytes-social facebook --resolve-page-token` leitet den Token gezielt ab
+und validiert ihn, ohne Events zu laden oder Beiträge zu erstellen. `--check-auth`
+und `--publish` versuchen die Wiederherstellung bei fehlenden Tokens oder Meta-Code 190.
+Reihenfolge: Page Token aus Environment, sonst Keyring; danach User Token aus
+Environment, sonst Keyring, sonst verdeckte Eingabe im TTY. Auch leere Environment-
+Variablen unterdrücken den jeweiligen Keyring-Lookup. Im TTY wird eine Wiederherstellung
+bestätigt; ohne TTY sind nur vorhandene User Tokens nutzbar. Ein validierter neuer
+Page Token kann nach separater Bestätigung im OS-Keyring gespeichert werden.
+Tokens werden nie ausgegeben. Dies ist kein OAuth-Browserlogin und erneuert keine
+User Tokens. Details: [Facebook](facebook/README.md).
 
 ## Zugang prüfen
 
@@ -139,7 +149,8 @@ uv run kulturbytes-social mastodon --check-auth
 uv run kulturbytes-social instagram --check-auth
 ```
 
-Der Check liest ausschließlich das konfigurierte Plattformkonto bzw. die Facebook-Seite.
+Der Check liest das konfigurierte Plattformkonto bzw. die Facebook-Seite und bei
+Facebook-Wiederherstellung zusätzlich die verwalteten Seiten des Nutzers.
 Er zeigt bei Erfolg den Namen und beendet sich mit Exitcode 0; bei fehlenden oder
 ungültigen Zugangsdaten erscheint eine Fehlermeldung mit Exitcode 1, beispielsweise
 `Error: Facebook Access Token ist abgelaufen.` Tokens werden niemals angezeigt;

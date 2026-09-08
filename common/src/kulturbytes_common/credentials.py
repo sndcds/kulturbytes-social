@@ -84,10 +84,9 @@ def delete_secret(service: str, username: str) -> bool:
 
 
 def resolve_credential_source(credential: Credential) -> ResolvedValue:
-    if credential.env_name != MASTODON.env_name:
-        value = get_dotenv_value(credential.env_name)
-        if value and value.strip():
-            return ResolvedValue(value.strip(), 'dotenv')
+    value = get_dotenv_value(credential.env_name)
+    if value and value.strip():
+        return ResolvedValue(value.strip(), 'dotenv')
     if credential.env_name in os.environ:
         return ResolvedValue(os.environ[credential.env_name].strip() or None, 'environment')
     value = get_secret(credential.service, credential.username)

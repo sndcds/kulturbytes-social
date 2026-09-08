@@ -126,7 +126,11 @@ Wechsel des Arbeitsverzeichnisses eindeutig. Facebook und Mastodon benötigen
 jeweils eine eigene Datenbank.
 
 `--include-published` erlaubt nach zusätzlichen Bestätigungen auch eine erneute
-Veröffentlichung eines bekannten Termins.
+Veröffentlichung eines bekannten Termins. Nach erfolgreicher Veröffentlichung
+ersetzt der neue Eintrag die gespeicherte Facebook-Post-ID
+für dieselbe `date_uuid` und aktualisiert Veranstaltungsdaten und `published_at`.
+Es wird nur die letzte Veröffentlichung gespeichert. Schlägt die Veröffentlichung
+auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 
 ## Hilfe bei Problemen
 

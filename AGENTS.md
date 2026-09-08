@@ -236,7 +236,7 @@ its details using the resolved slug. Preserve the list-summary/detail-descriptio
 text strategy. Skip numbered selection, but keep dry-run default, publication
 confirmation, and release/date/city/deduplication filters. Unmatched, ambiguous,
 or filtered targets and direct publication failures return a nonzero exit code.
-`--include-published` retains its additional confirmation and known SQLite limitation.
+`--include-published` retains its additional confirmation and replaces the stored publication after remote success.
 
 ---
 
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS published_events (
 
 Only write the publication record after the remote platform confirms success.
 
-Known limitation: the Facebook and Mastodon writers use plain `INSERT`. Republishing with `--include-published` can succeed remotely and then fail locally with a duplicate primary key. It does not update the existing record. Do not describe this option as reliably recording repeat publications.
+All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed repeat publication with `--include-published` replaces the stored remote publication ID (and Mastodon status URL), updates event metadata, and refreshes `published_at` after remote success. Each date retains only its latest publication; failed remote publication leaves the existing record unchanged.
 
 ---
 
@@ -664,7 +664,7 @@ confirmation and dry-run behavior aligned with the other platforms.
   Only `FINISHED` permits `POST /{user_id}/media_publish` with `creation_id`.
   Error, expiration, unexpected status or timeout must not record success.
 - Store the confirmed media ID in `instagram_posts.sqlite3`, keyed by `date_uuid`.
-  Unlike the older publishers, an explicitly confirmed repeat uses an upsert and
+  Like the other publishers, an explicitly confirmed repeat uses an upsert and
   replaces the saved media ID. Do not automatically retry publication after transport errors.
 - Tests in `tests/test_instagram.py` simulate the HTTP sequence, errors, polling, caption
   limits, image checks, CLI confirmation, direct selection and SQLite deduplication.
@@ -911,9 +911,9 @@ uv sync --all-packages
 uv run --all-packages python -m unittest discover -s tests -v
 ```
 
-They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, and filtering/sorting/limits. Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
+They cover selection parsing, basic address/hashtag/price formatting, mocked image downloads, both dry-run CLIs, publication confirmation, SQLite records and duplicate filtering, filtering/sorting/limits, and confirmed repeat publications (updated IDs, metadata, timestamps, and unchanged records on remote failure). Publication functions are mocked in the confirmed-publish test; this does not verify the actual platform HTTP requests.
 
-Additional coverage is still needed for Markdown normalization, Mastodon link/hashtag preservation and instance limits, malformed dates, platform HTTP errors, media processing, and repeat-publication database behavior. Do not use live social publishing in automated tests.
+Additional coverage is still needed for Markdown normalization, Mastodon link/hashtag preservation and instance limits, malformed dates, platform HTTP errors, and media processing. Do not use live social publishing in automated tests.
 
 ---
 

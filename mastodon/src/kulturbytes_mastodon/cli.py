@@ -74,6 +74,14 @@ def remember_post(
             start_time
         )
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date_uuid) DO UPDATE SET
+            event_uuid = excluded.event_uuid,
+            mastodon_status_id = excluded.mastodon_status_id,
+            mastodon_status_url = excluded.mastodon_status_url,
+            title = excluded.title,
+            start_date = excluded.start_date,
+            start_time = excluded.start_time,
+            published_at = CURRENT_TIMESTAMP
         """,
         (
             event_date["uuid"],

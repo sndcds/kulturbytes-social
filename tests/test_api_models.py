@@ -1,7 +1,7 @@
 from copy import deepcopy
 import click
 from dotenv_support import IsolatedEnvironmentTestCase
-from kulturbytes_common.models import validate_list, validate_detail
+from kulturbytes_common.sources.kulturbytes_models import validate_list, validate_detail
 from test_publishers import EVENT, SUMMARY
 
 

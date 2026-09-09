@@ -29,7 +29,7 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 else "  id: event.id\n  title: event.headline\n  text: event.body\n  city: event.location.city\n  image_url: media[0].url"
             )
             (self.sources / f"{name}.yaml").write_text(
-                f"name: {name}\nadapter: json\nendpoint: https://example.org/{name}\nroot: "
+                f"name: {name}\nadapter: json\nmedia:\n  allowed_hosts: [images.example.org]\nendpoint: https://example.org/{name}\nroot: "
                 + ("events" if name == "flat" else "data.items")
                 + "\nfields:\n"
                 + fields
@@ -40,12 +40,12 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
             "name": "Jazzabend",
             "description": "Musik aus einer JSON-Quelle.",
             "city": "Flensburg",
-            "picture": "https://api.kulturbytes.de/image.jpg",
+            "picture": "https://images.example.org/image.jpg",
         }
         self.calls = []
 
     def invoke(
-        self, platform="facebook", args=(), input="", payload=None, source="flat"
+        self, platform="facebook", args=(), input="", payload=None, source="flat", generic_command=False
     ):
         def respond(request):
             self.calls.append(request)
@@ -69,7 +69,7 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 return httpx.Response(
                     200, json={"configuration": {"statuses": {"max_characters": 500}}}
                 )
-            if request.url.host == "api.kulturbytes.de":
+            if request.url.host == "images.example.org":
                 return httpx.Response(
                     200,
                     content=b"\xff\xd8\xffJPEG",
@@ -107,14 +107,14 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 httpx,
                 "Client",
                 side_effect=lambda **kw: HTTPXClient(
-                    transport=httpx.MockTransport(respond), **kw
+                    **{**kw, "transport": httpx.MockTransport(respond)}
                 ),
             ),
             patch.object(facebook, "authenticate", side_effect=facebook.load_config),
             patch.object(instagram, "authenticate", side_effect=instagram.load_config),
         ):
             result = CliRunner().invoke(
-                cli, [platform, "--source", source, *args], input=input
+                cli, (["publish", "--platform", platform] if generic_command else [platform]) + ["--source", source, *args], input=input
             )
         return result
 
@@ -128,7 +128,7 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 )
                 self.assertIn("Jazzabend", result.output)
                 self.assertIn("DRY RUN", result.output)
-                self.assertNotIn("Welche Events", result.output)
+                self.assertNotIn("Welche Inhalte", result.output)
                 outputs.append(
                     result.output.replace(f"{source}-Einträge", "source-Einträge")
                 )

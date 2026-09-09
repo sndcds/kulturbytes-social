@@ -16,7 +16,7 @@ from kulturbytes_common.sources.errors import (
 from kulturbytes_common.sources.generic import JsonSourceAdapter
 from kulturbytes_common.sources.loader import definitions, load_definition, load_source
 from kulturbytes_common.sources.mapping import map_item
-from kulturbytes_common.sources.models import RenderedPost, SocialItem
+from kulturbytes_common.sources.models import RenderedPost, ContentItem
 from pydantic import ValidationError
 
 
@@ -29,16 +29,16 @@ class SourceTests(IsolatedEnvironmentTestCase):
         return load_definition(path)
 
     def test_minimal_and_complete_canonical_model(self):
-        item = SocialItem(title="Minimal")
+        item = ContentItem(title="Minimal")
         self.assertIsNone(item.date)
         self.assertEqual(item.tags, [])
-        item = SocialItem(
+        item = ContentItem(
             id="opaque id",
             title="Musik",
             subtitle="Abend",
             text="Text",
             city="Flensburg",
-            venue="Saal",
+            location="Saal",
             address="Straße 1",
             date="2099-01-01",
             time="18:30",
@@ -53,7 +53,7 @@ class SourceTests(IsolatedEnvironmentTestCase):
             ticket_link="https://example.org/tickets",
         )
         self.assertEqual(item.tags, ["Musik"])
-        self.assertNotIn("_origin", item.model_dump())
+        self.assertNotIn("_source_context", item.model_dump())
         forbidden = {
             "date_uuid",
             "date_slug",
@@ -62,7 +62,7 @@ class SourceTests(IsolatedEnvironmentTestCase):
             "release_status",
             "org_name",
         }
-        self.assertFalse(forbidden & SocialItem.model_fields.keys())
+        self.assertFalse(forbidden & ContentItem.model_fields.keys())
 
     def test_invalid_types_and_urls_are_rejected(self):
         for values in (
@@ -80,7 +80,7 @@ class SourceTests(IsolatedEnvironmentTestCase):
             {"date_uuid": "not canonical"},
         ):
             with self.subTest(values=values), self.assertRaises(ValidationError):
-                SocialItem.model_validate({"title": "Valid", **values})
+                ContentItem.model_validate({"title": "Valid", **values})
         with self.assertRaises(ValidationError):
             RenderedPost(text="text", image_url="ftp://host/image")
 
@@ -216,9 +216,9 @@ class SourceTests(IsolatedEnvironmentTestCase):
                 cookies={"private": "social-secret"},
             ) as parent,
             patch(
-                "kulturbytes_common.sources.generic.httpx.Client",
+                "kulturbytes_common.sources.fetching.httpx.Client",
                 side_effect=lambda **kw: HTTPXClient(
-                    transport=httpx.MockTransport(handle), **kw
+                    **{**kw, "transport": httpx.MockTransport(handle)}
                 ),
             ) as factory,
         ):
@@ -235,7 +235,7 @@ class SourceTests(IsolatedEnvironmentTestCase):
             ("@", [{"id": "1", "name": "Title"}]),
         ]:
             items, calls = self.fetch(payload, root=root, target="1")
-            self.assertEqual(items[0]._origin.key, "test:1")
+            self.assertEqual(items[0]._source_context.identity.publication_key, "test:1")
             self.assertEqual(len(calls), 1)
 
     def test_invalid_root_missing_target_and_duplicate_ids_fail_closed(self):
@@ -270,7 +270,7 @@ class SourceTests(IsolatedEnvironmentTestCase):
 
             with (
                 patch(
-                    "kulturbytes_common.sources.generic.source_client",
+                    "kulturbytes_common.sources.fetching.source_client",
                     side_effect=lambda: HTTPXClient(
                         transport=httpx.MockTransport(handle)
                     ),

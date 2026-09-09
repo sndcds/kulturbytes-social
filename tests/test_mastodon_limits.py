@@ -14,7 +14,7 @@ import httpx
 from click.testing import CliRunner
 from kulturbytes_social.cli import cli
 
-from kulturbytes_common.events import build_hashtags, get_event_url
+from kulturbytes_common.sources.kulturbytes_api import build_hashtags, get_event_url
 from test_publishers import EVENT, SUMMARY, MASTODON as mastodon, ENV
 
 

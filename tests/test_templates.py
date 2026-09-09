@@ -6,7 +6,7 @@ from dotenv_support import IsolatedEnvironmentTestCase
 from kulturbytes_common.rendering import TemplateRenderer
 from kulturbytes_common.sources.errors import TemplateRenderingError
 from kulturbytes_common.sources.kulturbytes import from_kulturbytes
-from kulturbytes_common.sources.models import SocialItem
+from kulturbytes_common.sources.models import ContentItem
 
 
 class TemplateTests(IsolatedEnvironmentTestCase):
@@ -26,9 +26,9 @@ class TemplateTests(IsolatedEnvironmentTestCase):
     def test_minimal_optional_fields_and_canonical_context(self):
         for platform in ("facebook", "instagram", "mastodon"):
             rendered = TemplateRenderer().render(
-                SocialItem(title="Minimal"), platform, source="arbitrary"
+                ContentItem(title="Minimal"), platform, source="arbitrary"
             )
-            self.assertEqual(rendered.text, "📅 Minimal")
+            self.assertEqual(rendered.text, "Minimal")
             self.assertNotIn("None", rendered.text)
 
     def test_source_override_then_default_fallback(self):
@@ -41,18 +41,18 @@ class TemplateTests(IsolatedEnvironmentTestCase):
             renderer = TemplateRenderer([root])
             self.assertEqual(
                 renderer.render(
-                    SocialItem(title="Title"), "facebook", source="special"
+                    ContentItem(title="Title"), "facebook", source="special"
                 ).text,
                 "Special: TITLE",
             )
             self.assertEqual(
                 renderer.render(
-                    SocialItem(title="Title"), "facebook", source="other"
+                    ContentItem(title="Title"), "facebook", source="other"
                 ).text,
                 "Default: Title",
             )
             with self.assertRaises(TemplateRenderingError):
-                renderer.render(SocialItem(title="Title"), "instagram")
+                renderer.render(ContentItem(title="Title"), "instagram")
 
     def test_unsafe_globals_attributes_and_includes_are_unavailable(self):
         cases = [
@@ -60,7 +60,7 @@ class TemplateTests(IsolatedEnvironmentTestCase):
             "{{ environment }}",
             "{{ cycler.__init__.__globals__ }}",
             "{{ title.__class__.__mro__ }}",
-            "{{ _origin }}",
+            "{{ _source_context }}",
             '{% include "/etc/passwd" %}',
             '{% import "secret.j2" as secret %}',
             "{{ title.upper() }}",
@@ -76,7 +76,7 @@ class TemplateTests(IsolatedEnvironmentTestCase):
                     self.subTest(code=code),
                     self.assertRaises(TemplateRenderingError) as error,
                 ):
-                    renderer.render(SocialItem(title="sensitive-content"), "facebook")
+                    renderer.render(ContentItem(title="sensitive-content"), "facebook")
                 self.assertNotIn("sensitive-content", str(error.exception))
             with self.assertRaises(TemplateRenderingError):
                 renderer.template("../outside", "facebook")
@@ -97,7 +97,7 @@ class TemplateTests(IsolatedEnvironmentTestCase):
             (root / "default/mastodon.j2").write_text(
                 '{{ title }}\n{{ (text or "") }} {{ (text or "") }}\n{{ link }}\n{{ tags | hashtags }}'
             )
-            item = SocialItem(
+            item = ContentItem(
                 title="Title",
                 text="long words " * 1000,
                 link="https://example.org/event",
@@ -115,11 +115,11 @@ class TemplateTests(IsolatedEnvironmentTestCase):
         for platform in ("instagram", "mastodon"):
             with self.assertRaises(TemplateRenderingError):
                 TemplateRenderer().render(
-                    SocialItem(title="X" * 2400, link="https://example.org/full"),
+                    ContentItem(title="X" * 2400, link="https://example.org/full"),
                     platform,
                 )
 
     def test_data_is_not_reinterpreted_as_jinja(self):
         text = "{{ os.environ }}"
-        result = TemplateRenderer().render(SocialItem(title=text), "facebook")
+        result = TemplateRenderer().render(ContentItem(title=text), "facebook")
         self.assertIn(text, result.text)

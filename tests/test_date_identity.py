@@ -120,7 +120,7 @@ class DateIdentityTests(IsolatedEnvironmentTestCase):
                     publish.assert_called_once()
                     self.assertEqual(publish.call_args.args[2].id, EVENT['date']['uuid'])
                     self.assertEqual(publish.call_args.args[2].date, EVENT['date']['start_date'])
-                    self.assertEqual(publish.call_args.args[2].venue, EVENT['date']['venue_name'])
+                    self.assertEqual(publish.call_args.args[2].location, EVENT['date']['venue_name'])
                     self.assertEqual(publish.call_args.kwargs['dry_run'], dry_run)
 
 

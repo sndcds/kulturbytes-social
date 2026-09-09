@@ -7,13 +7,13 @@ from kulturbytes_common.media_security import PublicMediaTransport
 
 HTTPXClient = httpx.Client
 
-def mock_media_client(parent):
+def mock_media_client(parent, policy):
     # Keep the real pinning policy, then adapt the numeric request for existing API fixtures.
     def endpoint(request):
         logical = httpx.Request(request.method, request.url.copy_with(host=request.extensions["sni_hostname"]),
                                 headers=request.headers, extensions=request.extensions)
         return parent.send(logical, stream=True, follow_redirects=False)
-    return HTTPXClient(transport=PublicMediaTransport(httpx.MockTransport(endpoint)),
+    return HTTPXClient(transport=PublicMediaTransport(policy, httpx.MockTransport(endpoint)),
                        timeout=parent.timeout, trust_env=False)
 from pathlib import Path
 from unittest.mock import patch

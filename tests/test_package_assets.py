@@ -48,11 +48,11 @@ sys.path.insert(0, sys.argv[1])
 import kulturbytes_common
 assert Path(kulturbytes_common.__file__).is_relative_to(Path(sys.argv[1]))
 from kulturbytes_common.sources.loader import definitions
-from kulturbytes_common.sources.models import SocialItem
+from kulturbytes_common.sources.models import ContentItem
 from kulturbytes_common.rendering import TemplateRenderer
-assert set(definitions()) == {'kulturbytes','example-simple','example-nested'}
+assert set(definitions()) == {'kulturbytes','example-simple','example-nested','example-events','example-places','example-articles'}
 for platform in ('facebook','instagram','mastodon'):
-    assert TemplateRenderer().render(SocialItem(title='Installed'),platform).text == '📅 Installed'
+    assert TemplateRenderer().render(ContentItem(title='Installed'),platform).text == 'Installed'
 print('installed assets OK')
 """
             result = subprocess.run(

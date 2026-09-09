@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -135,7 +136,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         return result
 
     def assert_unpublished(self):
-        with sqlite3.connect(self.database) as conn:
+        with closing(sqlite3.connect(self.database)) as conn, conn:
             self.assertFalse(already_published(conn, "date-1"))
         self.assertFalse(
             any(r.url.path.endswith("/media_publish") for r in self.requests)
@@ -175,7 +176,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
             [r.url.path for r in self.requests[-3:]],
             ["/v26.0/123/media", "/v26.0/456", "/v26.0/123/media_publish"],
         )
-        with sqlite3.connect(self.database) as conn:
+        with closing(sqlite3.connect(self.database)) as conn, conn:
             self.assertEqual(
                 conn.execute(
                     "SELECT instagram_media_id FROM published_events"
@@ -187,7 +188,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assertEqual(len(self.requests), 1)
         # Re-publication requires both duplicate and publication confirmation.
         self.run_cli(DIRECT + ["--publish", "--include-published"], "y\ny\n")
-        with sqlite3.connect(self.database) as conn:
+        with closing(sqlite3.connect(self.database)) as conn, conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM published_events").fetchone(), (1,)
             )
@@ -258,7 +259,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
                     self.assertIn("Phase=instagram_container", result.output)
                 else:
                     self.assertIn("[REDACTED]", result.output)
-                with sqlite3.connect(self.database) as conn:
+                with closing(sqlite3.connect(self.database)) as conn, conn:
                     self.assertFalse(already_published(conn, "date-1"))
 
     def test_invalid_creation_response_does_not_publish(self):

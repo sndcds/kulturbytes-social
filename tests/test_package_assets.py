@@ -53,7 +53,7 @@ assert type(load_source("kulturbytes")) is JsonSourceAdapter
 from kulturbytes_common.sources.models import ContentItem
 from kulturbytes_common.rendering import TemplateRenderer
 assert set(definitions()) == {'kulturbytes','example-simple','example-nested','example-events','example-places','example-articles'}
-for platform in ('facebook','instagram','mastodon'):
+for platform in ('facebook','instagram','mastodon','bluesky'):
     assert TemplateRenderer().render(ContentItem(title='Installed'),platform).text == 'Installed'
 print('installed assets OK')
 """

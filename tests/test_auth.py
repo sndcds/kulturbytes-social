@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
@@ -450,7 +451,7 @@ class AuthTests(IsolatedEnvironmentTestCase):
                 self.assertIn("DRY RUN", result.output)
                 self.lookup.assert_not_called()
                 self.assertEqual(len(requests), 3 if module is instagram else 2)
-                with sqlite3.connect(database) as conn:
+                with closing(sqlite3.connect(database)) as conn, conn:
                     self.assertEqual(
                         conn.execute(
                             "SELECT COUNT(*) FROM published_events"

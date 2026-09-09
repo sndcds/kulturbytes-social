@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -21,7 +22,7 @@ DIRECT = ["--event-uuid", "event-1", "--date-identifier", "date-1"]
 
 class DateIdentityTests(IsolatedEnvironmentTestCase):
     def records(self, database: Path) -> list[tuple]:
-        with sqlite3.connect(database) as conn:
+        with closing(sqlite3.connect(database)) as conn, conn:
             return conn.execute(
                 "SELECT * FROM published_events ORDER BY date_uuid"
             ).fetchall()

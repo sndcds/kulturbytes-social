@@ -2,6 +2,7 @@
 
 import click
 
+from kulturbytes_bluesky import bluesky_command
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command
 from kulturbytes_mastodon import mastodon_command
@@ -16,6 +17,7 @@ def cli() -> None:
     """Strukturierte Inhalte auf sozialen Plattformen veröffentlichen."""
 
 
+cli.add_command(bluesky_command)
 cli.add_command(facebook_command)
 cli.add_command(mastodon_command)
 cli.add_command(instagram_command)

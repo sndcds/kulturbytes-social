@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import click
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-IMAGE_PLATFORMS = frozenset({"facebook", "instagram", "mastodon"})
+IMAGE_PLATFORMS = frozenset({"facebook", "instagram", "mastodon", "bluesky"})
 
 
 class ImageSettings(BaseModel):

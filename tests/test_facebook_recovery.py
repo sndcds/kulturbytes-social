@@ -1,6 +1,7 @@
 """No live Meta calls or OS keyring access."""
 
 import os
+from contextlib import closing
 from unittest.mock import patch
 
 import httpx
@@ -292,7 +293,10 @@ class RecoveryTests(IsolatedEnvironmentTestCase):
                 input="y\n",
             )
             self.assertEqual(result.exit_code, 0, result.output + str(result.exception))
-            with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+            with (
+                closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                conn,
+            ):
                 self.assertEqual(
                     conn.execute(
                         "SELECT facebook_post_id FROM published_events"

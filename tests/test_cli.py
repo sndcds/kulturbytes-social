@@ -21,7 +21,7 @@ class UnifiedCliTests(IsolatedEnvironmentTestCase):
     def test_root_help_and_unknown_command(self):
         result = CliRunner().invoke(cli, ["--help"])
         self.assertEqual(result.exit_code, 0, result.output)
-        for platform in ["facebook", "mastodon", "instagram"]:
+        for platform in ["facebook", "mastodon", "instagram", "bluesky"]:
             self.assertIn(platform, result.output)
             help_result = CliRunner().invoke(cli, [platform, "--help"])
             self.assertEqual(help_result.exit_code, 0, help_result.output)
@@ -45,7 +45,7 @@ class UnifiedCliTests(IsolatedEnvironmentTestCase):
             root["project"]["scripts"],
             {"kulturbytes-social": "kulturbytes_social.cli:cli"},
         )
-        for platform in ["facebook", "mastodon", "instagram"]:
+        for platform in ["facebook", "mastodon", "instagram", "bluesky"]:
             project = tomllib.loads((ROOT / platform / "pyproject.toml").read_text())
             self.assertNotIn("scripts", project["project"])
             self.assertFalse((ROOT / platform / "main.py").exists())
@@ -53,7 +53,7 @@ class UnifiedCliTests(IsolatedEnvironmentTestCase):
     def test_installed_entry_point_outside_checkout(self):
         executable = Path(sys.executable).parent / "kulturbytes-social"
         with tempfile.TemporaryDirectory() as directory:
-            for args in [[], ["facebook"], ["mastodon"], ["instagram"]]:
+            for args in [[], ["facebook"], ["mastodon"], ["instagram"], ["bluesky"]]:
                 result = subprocess.run(
                     [str(executable), *args, "--help"],
                     cwd=directory,
@@ -70,7 +70,7 @@ class UnifiedCliTests(IsolatedEnvironmentTestCase):
         with patch.dict(os.environ, {}, clear=True):
             before = {
                 platform: database.get_database_path(platform)
-                for platform in ["facebook", "mastodon", "instagram"]
+                for platform in ["facebook", "mastodon", "instagram", "bluesky"]
             }
             with tempfile.TemporaryDirectory() as directory, chdir(directory):
                 for platform, path in before.items():

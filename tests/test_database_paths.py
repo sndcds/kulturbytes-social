@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -46,7 +47,7 @@ class DatabasePathTests(IsolatedEnvironmentTestCase):
                     self.assertRaises(click.ClickException),
                 ):
                     module.init_database()
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn, conn:
                 self.assertEqual(
                     conn.execute("SELECT platform FROM publisher_metadata").fetchone(),
                     ("facebook",),
@@ -55,14 +56,14 @@ class DatabasePathTests(IsolatedEnvironmentTestCase):
     def test_legacy_schema_is_checked_before_metadata_is_written(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.sqlite3"
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn, conn:
                 conn.execute(
                     "CREATE TABLE published_events (date_uuid TEXT PRIMARY KEY, facebook_post_id TEXT)"
                 )
                 conn.execute("INSERT INTO published_events VALUES ('date-1', 'post-1')")
             with self.assertRaises(click.ClickException):
                 database.open_database(path, "mastodon")
-            with database.open_database(path, "facebook") as conn:
+            with closing(database.open_database(path, "facebook")) as conn, conn:
                 self.assertEqual(
                     conn.execute("SELECT * FROM published_events").fetchall(),
                     [("date-1", "post-1")],

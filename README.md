@@ -1,6 +1,6 @@
 # kulturbytes-social
 
-kulturbytes-social ist eine Open-Source-Python-CLI, die Inhalte aus generischen JSON APIs in Social-Media-Beiträge für Facebook, Instagram und Mastodon umwandelt.
+kulturbytes-social ist eine Open-Source-Python-CLI, die Inhalte aus generischen JSON APIs in Social-Media-Beiträge für Facebook, Instagram, Mastodon und Bluesky umwandelt.
 
 Das Werkzeug richtet sich an Entwickler, Redaktionen und Veranstalter, die Artikel,
 Orte oder Veranstaltungen aus bestehenden Datenquellen veröffentlichen möchten.
@@ -36,8 +36,9 @@ Python-Spezialadapter.
 | [Facebook](facebook/README.md) | Text auf Facebook Pages | Ein Fotobeitrag | Meta System User Access Token; intern abgeleiteter Page Token |
 | [Instagram](instagram/README.md) | Bildunterschrift im Professional-Konto | Ein öffentlich abrufbares JPEG im Feed | Meta System User Access Token, bevorzugt Facebook Login |
 | [Mastodon](mastodon/README.md) | Öffentlicher Status mit Instanzlimit | Ein Bild mit Alt-Text oder nur Text | Access Token der Mastodon-Instanz |
+| [Bluesky](#bluesky) | Text über das Konto-PDS | Ein Bild mit Alt-Text oder nur Text | Bluesky App Password |
 
-Die Publisher verwenden die Meta Graph API bzw. die Mastodon API. Details zu
+Die Publisher verwenden die Meta Graph API, die Mastodon API bzw. AT Protocol. Details zu
 Voraussetzungen, Legacy-Zugängen und Grenzen stehen in den Plattformanleitungen.
 
 ## Architektur: von JSON zu Social Media
@@ -48,7 +49,7 @@ JSON API + YAML-SourceDefinition
   → JMESPath-Mapping
   → ContentItem mit Pydantic-Validierung
   → Jinja2-Template → RenderedPost
-  → Facebook / Instagram / Mastodon
+  → Facebook / Instagram / Mastodon / Bluesky
 ```
 
 [`kulturbytes-common`](common/README.md) stellt Quellenkonfiguration, Mapping,
@@ -84,6 +85,7 @@ uv run kulturbytes-social publish --help
 uv run kulturbytes-social facebook --help
 uv run kulturbytes-social mastodon --help
 uv run kulturbytes-social instagram --help
+uv run kulturbytes-social bluesky --help
 ```
 
 Eine erste Vorschau über den generischen Publishing-Befehl:
@@ -1185,6 +1187,80 @@ Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennun
 
 Weitere Hilfe findest du bei [Facebook](facebook/README.md#hilfe-bei-problemen)
 und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
+
+## Bluesky
+
+Bluesky ist über denselben Quellen-, Template- und Veröffentlichungsablauf verfügbar:
+
+```bash
+uv run kulturbytes-social bluesky --dry-run
+uv run kulturbytes-social bluesky --publish
+uv run kulturbytes-social publish --platform bluesky --source example-articles --item-id article-1 --publish
+uv run kulturbytes-social bluesky --check-auth
+```
+
+Die Vorschau benötigt keine Bluesky-Zugangsdaten und erstellt weder eine Session
+noch einen Blob oder Post. `--publish` prüft den Zugang vor Quellabruf und
+Datenbankinitialisierung und verlangt die übliche Einzelbestätigung.
+`--source`, `--item-id`, Stadt-/Limitfilter, interaktive Auswahl, die bestehenden
+Legacy-Selektoren und `--include-published` funktionieren wie bei den anderen Plattformen.
+
+In der lokalen `.env` konfigurieren:
+
+```dotenv
+BLUESKY_HANDLE=your-handle.bsky.social
+BLUESKY_APP_PASSWORD=
+BLUESKY_SERVICE_URL=https://bsky.social
+BLUESKY_DATABASE_PATH=
+```
+
+Ein **Bluesky App Password** in `BLUESKY_APP_PASSWORD` eintragen, niemals das
+primäre Kontopasswort. Die Service-URL muss das HTTPS-PDS des Kontos bezeichnen;
+eigene PDS werden unterstützt. Handle und Service folgen `.env > Environment`.
+Das App Password folgt `.env > Environment > OS-Keyring`; die bekannten Leerwertregeln
+gelten weiterhin. Explizite Keyring-Verwaltung (keine Passwortwerte als CLI-Argumente):
+
+```bash
+uv run kulturbytes-social bluesky --credentials set
+uv run kulturbytes-social bluesky --credentials status
+uv run kulturbytes-social bluesky --credentials delete
+```
+
+Der Eintrag ist `kulturbytes-social/bluesky` / `app-password`.
+`createSession` liefert einen nur im Arbeitsspeicher gehaltenen JWT und die DID;
+die DID ist das Ziel von `createRecord`. Es gibt keine automatischen POST-Wiederholungen
+oder Session-Erneuerungen. `--check-auth` erstellt nur eine Session, keinen Inhalt.
+
+Die [Post-Lexicon](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/feed/post.json)
+erlaubt **300 Grapheme und 3000 UTF-8-Bytes**. Der Renderer kürzt nur ganze Wörter
+des Beschreibungstexts; Titel, Links und erforderliche Hashtags bleiben erhalten.
+Zu große feste Metadaten führen zu einem Fehler. URL-Facets verwenden UTF-8-Bytepositionen;
+Mentions werden noch nicht aufgelöst. Kulturbytes-Branding bleibt im eigenen Jinja-Template.
+
+Ein Bild wird über die bestehende HTTPS-/Host-/DNS-Sicherheitskette geladen und
+anschließend per `uploadBlob` zum PDS gesendet. Das offizielle
+[Image-Lexicon](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/embed/images.json)
+erlaubt **2.000.000 Bytes pro Bild**. Größere Downloads werden vor dem Upload abgebrochen.
+JPEG, PNG und WebP werden anhand von MIME-Typ und Dateisignatur geprüft.
+Die Kulturbytes-Pluto-Vorgabe ist `bluesky: 4/3` / `jpg`; eine geringere Auflösung
+kann bei zu großen Bildern helfen, garantiert aber keine Byte-Größe.
+Alt-Text kommt aus `RenderedPost`; ungewisse transformierte Bildmaße werden nicht behauptet.
+
+Die eigene `bluesky_posts.sqlite3` speichert die AT URI als Post-ID und optional
+die öffentliche bsky.app-URL. Das Journal erfasst `bluesky_blob` und `bluesky_post`.
+Unklare Ergebnisse sperren erneutes Posten, auch mit `--include-published`.
+Nach Stoppen des Workers und manueller Plattformprüfung ist lokale Wiederherstellung möglich:
+
+```bash
+uv run kulturbytes-social attempts list --platform bluesky --active
+uv run kulturbytes-social attempts resolve --platform bluesky ATTEMPT_UUID --outcome published --remote-id 'at://did:plc:ACCOUNT/app.bsky.feed.post/RECORD_KEY'
+```
+
+Die AT URI muss zur gespeicherten DID gehören. Bei sicher fehlendem Post kann nach
+Prüfung stattdessen `--outcome failed` verwendet werden. Ein Blob-Upload allein
+ist noch kein sichtbarer Post. Wiederherstellung benötigt keine Zugangsdaten und
+führt keine Remote-Anfragen aus. App Passwords und JWTs gelangen weder an Quellen/
+Bildserver noch in Ausgaben, Templates oder SQLite.
 
 <a id="continuous-integration"></a>
 

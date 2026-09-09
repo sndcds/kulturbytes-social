@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -146,7 +147,10 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                 self.assertIn("DRY RUN", result.output)
                 self.assertIn("Kulturabend", result.output)
                 self.assertEqual(len(requests), 2)
-                with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                with (
+                    closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                    conn,
+                ):
                     self.assertFalse(already_published(conn, "date-1"))
 
     def test_social_text_uses_list_summary_or_detail_description(self):
@@ -182,7 +186,12 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                     if summary and summary.strip():
                         self.assertNotIn(detail["description"], result.output)
                     self.assertEqual(len(requests), 2)
-                    with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                    with (
+                        closing(
+                            sqlite3.connect(Path(directory) / "posts.sqlite3")
+                        ) as conn,
+                        conn,
+                    ):
                         self.assertFalse(already_published(conn, "date-1"))
 
     def test_publish_requires_confirmation(self):
@@ -248,7 +257,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
         return self.publication_records(directory)
 
     def publication_records(self, directory):
-        with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+        with closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn, conn:
             conn.row_factory = sqlite3.Row
             return [dict(row) for row in conn.execute("SELECT * FROM published_events")]
 
@@ -405,7 +414,12 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                     self.assertIn("DRY RUN", result.output)
                     self.assertNotIn("Welche Inhalte", result.output)
                     self.assertEqual(len(requests), 2)
-                    with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                    with (
+                        closing(
+                            sqlite3.connect(Path(directory) / "posts.sqlite3")
+                        ) as conn,
+                        conn,
+                    ):
                         self.assertFalse(already_published(conn, "date-1"))
                     result, _ = self.run_cli(
                         module, directory, args + ["--publish"], "n\n"
@@ -422,7 +436,12 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                     with patch.object(module, function, return_value=value) as publish:
                         self.run_cli(module, directory, args + ["--publish"], "y\n")
                         publish.assert_called_once()
-                    with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                    with (
+                        closing(
+                            sqlite3.connect(Path(directory) / "posts.sqlite3")
+                        ) as conn,
+                        conn,
+                    ):
                         self.assertTrue(already_published(conn, "date-1"))
                     result, requests = self.run_cli(
                         module, directory, args, "", expected_exit=1
@@ -458,7 +477,10 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                         expected_exit=1,
                     )
                 self.assertIn("Veröffentlichung fehlgeschlagen", result.output)
-                with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                with (
+                    closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                    conn,
+                ):
                     self.assertFalse(already_published(conn, "date-1"))
 
     def test_direct_selection_rejects_invalid_or_filtered_targets(self):
@@ -513,7 +535,10 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                 with patch.object(module, function, return_value=value) as publish:
                     self.run_cli(module, directory, ["--publish"], "1\ny\n")
                     publish.assert_called_once()
-                with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                with (
+                    closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                    conn,
+                ):
                     self.assertTrue(already_published(conn, "date-1"))
 
 

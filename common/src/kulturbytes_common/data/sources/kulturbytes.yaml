@@ -9,10 +9,12 @@ media:
     ratio:
       instagram: 4/5
       facebook: 1200/630
+      bluesky: 4/3
       mastodon: free
     type:
       instagram: jpg
       facebook: webp
+      bluesky: jpg
       mastodon: jpg
     max_width: 1920
     max_height: 1920

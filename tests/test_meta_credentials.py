@@ -3,6 +3,7 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
@@ -143,7 +144,7 @@ class MetaTests(IsolatedEnvironmentTestCase):
             )
             database = Path(directory) / "state.sqlite3"
             if publish and result.exit_code == 0:
-                with sqlite3.connect(database) as conn:
+                with closing(sqlite3.connect(database)) as conn, conn:
                     self.assertEqual(
                         conn.execute(
                             "SELECT COUNT(*) FROM published_events"

@@ -221,12 +221,17 @@ class TemplateRenderer:
                     f"{platform.title()}: Pflicht-Link fehlt im Template."
                 )
             tokens = set(re.findall(r"(?<!\w)#[\w]+", text))
+            fixed_tags = set(re.findall(r"(?<!\w)#[\w]+", fixed))
+            template_tags = fixed_tags - set(protected_tags)
             required_count = (
-                min(5, len(protected_tags))
+                min(max(0, 5 - len(template_tags)), len(protected_tags))
                 if platform == "instagram"
                 else len(protected_tags)
             )
-            if len(set(protected_tags) & tokens) < required_count:
+            if (
+                not fixed_tags <= tokens
+                or len(set(protected_tags) & tokens) < required_count
+            ):
                 raise TemplateRenderingError(
                     f"{platform.title()}: vollständige Hashtags fehlen im Template."
                 )

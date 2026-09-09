@@ -5,7 +5,7 @@ from pathlib import Path
 from dotenv_support import IsolatedEnvironmentTestCase
 from kulturbytes_common.rendering import TemplateRenderer
 from kulturbytes_common.sources.errors import TemplateRenderingError
-from kulturbytes_common.sources.kulturbytes import from_kulturbytes
+from canonical_support import canonical as from_kulturbytes
 from kulturbytes_common.sources.models import ContentItem
 
 

@@ -38,7 +38,7 @@ Veranstalter: {{ organizer }}
 
 👉 Mehr Informationen: {{ link }}
 {% endif %}
-{% set social_tags = tags | hashtags(city=city) %}
+{% set social_tags = (tags + ['Kulturbytes']) | hashtags(city=city) %}
 {% if social_tags %}
 
 {{ social_tags }}

@@ -12,7 +12,7 @@
 
 {{ text }}
 {% endif %}
-{% set social_tags = tags | hashtags(city=city) %}
+{% set social_tags = (tags + ['Kulturbytes']) | hashtags(city=city) %}
 {% if price or ticket_link or organizer or link or social_tags %}
 
 {% endif %}

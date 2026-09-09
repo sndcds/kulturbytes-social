@@ -1,7 +1,171 @@
 name: kulturbytes
-adapter: kulturbytes
-media:
-  allowed_hosts:
-    - api.kulturbytes.de
+adapter: json
 behavior:
   skip_past: true
+media:
+  allowed_hosts:
+  - api.kulturbytes.de
+skip_invalid: true
+list:
+  allow_duplicate_ids: true
+  url: https://api.kulturbytes.de/api/events
+  method: GET
+  root: data.events
+  mode: collection
+  fields:
+    id: date_uuid
+    title: title
+    city: venue_city
+    location: venue_name
+    date: start_date
+    time: start_time || `null`
+  assertions:
+    uuid:
+      type: identifier
+      required: true
+    date_uuid:
+      type: identifier
+      required: true
+    date_slug:
+      type: identifier
+      required: true
+    release_status:
+      type: string
+      required: true
+    title:
+      type: string
+      required: true
+    start_date:
+      type: date
+      required: true
+    venue_name:
+      type: string
+    venue_city:
+      type: string
+    summary:
+      type: string
+    start_time:
+      type: time
+detail:
+  url: https://api.kulturbytes.de/api/event/{event_uuid}/date/{date_slug}
+  method: GET
+  root: data
+  mode: object
+  placeholders:
+    event_uuid: list.uuid
+    date_slug: list.date_slug
+  identity_checks:
+  - left: list.uuid
+    right: detail.uuid
+  - left: list.date_uuid
+    right: detail.date.uuid
+  - left: list.date_slug
+    right: detail.date.slug
+  assertions:
+    uuid:
+      type: identifier
+      required: true
+    title:
+      type: string
+      required: true
+    date:
+      type: object
+      required: true
+    date.uuid:
+      type: identifier
+      required: true
+    date.slug:
+      type: identifier
+      required: true
+    date.start_date:
+      type: date
+      required: true
+    subtitle:
+      type: string
+    description:
+      type: string
+    summary:
+      type: string
+    org_name:
+      type: string
+    date.venue_name:
+      type: string
+    date.venue_street:
+      type: string
+    date.venue_house_number:
+      type: string
+    date.venue_postal_code:
+      type: string
+    date.venue_city:
+      type: string
+    date.price_type:
+      type: string
+    date.currency:
+      type: string
+    images.main.alt:
+      type: string
+    tags:
+      type: strings
+    images:
+      type: object
+    images.main:
+      type: object
+    images.main.uuid:
+      type: identifier
+    images.main.url:
+      type: url
+    date.ticket_link:
+      type: url
+    date.min_price:
+      type: number
+    date.max_price:
+      type: number
+    date.end_date:
+      type: date
+    date.start_time:
+      type: time
+legacy_selectors:
+  event_uuid:
+  - uuid
+  date_identifier:
+  - date_uuid
+  - date_slug
+filters:
+- expression: release_status
+  equals: released
+identity:
+  publication_key: list.date_uuid
+  content_key: list.uuid
+  revision: list.date_slug
+fields:
+  id: list.date_uuid
+  title: detail.title
+  subtitle: detail.subtitle
+  text: trim(trim(list.summary) || detail.description)
+  city: detail.date.venue_city
+  location: detail.date.venue_name
+  address: >-
+    join_text(', ', [(detail.date.venue_street && join_text(' ', [detail.date.venue_street, detail.date.venue_house_number]))
+    || '', join_text(' ', [detail.date.venue_postal_code, detail.date.venue_city])])
+  date: detail.date.start_date
+  time: time_hm(detail.date.start_time || '00:00')
+  end_date: detail.date.end_date
+  image_url: detail.images.main.url || `null`
+  image_alt: trim(detail.images.main.alt || join('', ['Veranstaltungsbild zu ', detail.title]))
+  image_name: detail.images.main.uuid || list.date_uuid
+  organizer: detail.org_name
+  ticket_link: detail.date.ticket_link || `null`
+  tags: detail.tags
+  price: >-
+    (detail.date.price_type == 'free' && 'Eintritt frei') || (detail.date.min_price != `null` && join('',
+    ['Eintritt: ', number_text(detail.date.min_price), (detail.date.max_price != `null` && detail.date.max_price
+    != detail.date.min_price && join('', ['–', number_text(detail.date.max_price)])) || '', ' ', ((contains(keys(detail.date),
+    'currency') && [(detail.date.currency == `null` && 'None') || to_string(detail.date.currency)]) ||
+    ['EUR'])[0]])) || `null`
+derived:
+  link:
+    concat:
+    - https://kulturbytes.de/de/veranstaltung/
+    - expr: path_segment(list.uuid)
+    - /
+    - expr: path_segment(list.date_slug)

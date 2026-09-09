@@ -37,15 +37,19 @@ def show_source(source: str) -> None:
     renderer = TemplateRenderer()
     renderer.validate(adapter.name)
     click.echo(f"name: {definition.name}\nadapter: {definition.adapter}")
-    if definition.listing:
-        url = urlsplit(definition.listing.url)
-        click.echo(f"list host/path: {url.hostname}{url.path}")
-        click.echo(f"mode: {definition.listing.mode}")
-    else:
-        click.echo("list: adapter-managed")
-    click.echo(
-        f"detail: {'yes' if definition.detail else 'adapter-managed' if not definition.listing else 'no'}"
-    )
+    url = urlsplit(definition.listing.url)
+    click.echo(f"list host/path: {url.hostname}{url.path}")
+    click.echo(f"mode: {definition.listing.mode}")
+    click.echo(f"detail: {'yes' if definition.detail else 'no'}")
+    if definition.detail:
+        url = urlsplit(definition.detail.url)
+        click.echo(f"detail host/path: {url.hostname}{url.path}")
+        click.echo(
+            "placeholders: " + ", ".join(definition.detail.placeholders or {"id": None})
+        )
+        click.echo(f"identity checks: {len(definition.detail.identity_checks)}")
+    click.echo("identity: " + (", ".join(definition.identity) or "source:id (default)"))
+    click.echo("legacy selectors: " + ", ".join(definition.selectors))
     click.echo("fields: " + ", ".join(sorted(definition.fields)))
     click.echo(
         "media allowed_hosts: " + ", ".join(sorted(definition.media.allowed_hosts))

@@ -12,7 +12,7 @@ from click.testing import CliRunner
 from dotenv_support import IsolatedEnvironmentTestCase
 from kulturbytes_common.publications import (
     reserve_attempt, execute_publication, begin_remote_mutation, get_attempt, list_attempts,
-    mark_failed, mark_remote_succeeded, mark_published, resolve_attempt, unresolved_attempt, RemoteRejected,
+    mark_remote_succeeded, resolve_attempt, RemoteRejected,
 )
 from kulturbytes_common.database import already_published
 from kulturbytes_social.cli import cli

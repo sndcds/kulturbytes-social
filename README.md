@@ -328,9 +328,9 @@ SourceDefinition → Fetcher → JMESPath-Mapper → ContentItem
     → Jinja2 TemplateRenderer → RenderedPost → Publisher
 ```
 
-Kulturbytes ist ein mitgelieferter Adapter mit eigenen Listen-/Detailabfragen,
-Release- und Identitätsprüfungen. Er liefert dasselbe `ContentItem` wie jede
-konfigurierte JSON-Quelle. Der Kern fragt Adapter-Fähigkeiten und Quellenverhalten
+Kulturbytes hat keinen eigenen Python-Adapter mehr. Es verwendet denselben
+`JsonSourceAdapter` wie jede andere JSON-Quelle. Listen-/Detailabfragen, Release-
+und Identitätsprüfungen stehen vollständig in `sources/kulturbytes.yaml`. Der Kern fragt Adapter-Fähigkeiten und Quellenverhalten
 ab; er verzweigt nicht anhand eines Quellennamens. Neue Veranstaltungen, Orte,
 Artikel oder einfache Mitteilungen brauchen keine neuen Python-Klassen.
 
@@ -348,7 +348,7 @@ bleiben unter den Plattformbefehlen, etwa `facebook --check-auth`.
 
 `kulturbytes` ist ausschließlich am CLI-Rand als Standardquelle gesetzt.
 Die alten Optionen `--event-uuid` und `--date-identifier` sind Kulturbytes-
-Kompatibilitätsselektoren der Plattformbefehle. Der Adapter löst sie auf;
+Kompatibilitätsselektoren der Plattformbefehle. Die generische Engine löst sie anhand von `legacy_selectors` in YAML auf;
 `publish` verwendet den neutralen Selektor `--item-id`.
 
 ## SourceDefinition und JSON Source Mapping
@@ -390,10 +390,10 @@ behavior:
 | Einstellung | Bedeutung |
 | --- | --- |
 | `name` | Eindeutiger Name, 1–64 Kleinbuchstaben/Ziffern/`_`/`-`; erstes Zeichen alphanumerisch |
-| `adapter` | `json` oder mitgelieferter Spezialadapter `kulturbytes` |
+| `adapter` | `json` |
 | `list` / `request` | Gleichwertige Formen für den ersten Abruf; genau eine verwenden |
 | `endpoint` | Kompatibilitätsform für die URL; `root`, `mode`, `method`, `headers`, `query` stehen dann oben |
-| `detail` | Optionaler Detail-Request mit genau einem `{id}` im URL-Pfad |
+| `detail` | Optionaler Detail-Request mit `{id}` oder deklarierten Pfad-Platzhaltern |
 | `fields` | Kanonisches Feld → JMESPath-Ausdruck; `title` ist erforderlich |
 | `media.allowed_hosts` | Erlaubte Bildhosts dieser Quelle, standardmäßig `[]` |
 | `behavior.skip_past` | Vergangene Datumsangaben ausschließen; generischer Standard `false` |
@@ -427,14 +427,21 @@ erforderlich; `@` bezeichnet die vollständige Antwort.
 Ohne `detail` ist der erste Abruf bereits der vollständige Inhalt. Eine direkte
 Auswahl mit `--item-id` sucht dann genau einen Eintrag vor Anwendung des Limits.
 Mit `detail` arbeitet die interaktive Auswahl zunächst mit dem Listen-Mapping und
-lädt nur ausgewählte Details. Ein direktes `--item-id 123` überspringt den Listen-
-abruf und lädt unmittelbar `/items/123`. Das Detail muss eindeutig dieselbe ID
+lädt nur ausgewählte Details. Beim einfachen `{id}`-Modus überspringt ein direktes
+`--item-id 123` den Listenabruf und lädt unmittelbar `/items/123`. Deklarierte
+`detail.placeholders` benötigen dagegen den ausgewählten Listeneintrag; dann
+findet auch bei `--item-id` zuerst ein Listenabruf statt. Das Detail muss eindeutig dieselbe ID
 liefern; abweichende oder fehlende IDs führen zum Abbruch. Listen-/Detail-Mappings
 brauchen deshalb eine stabile `id`.
 
-Die einzige URL-Variable ist `{id}`, genau einmal im Pfad. Die ID wird als ein
-URL-kodiertes Pfadsegment eingesetzt; `.` und `..` werden abgelehnt. Es gibt keine
-Jinja-URLs und keine Platzhalter für Host, Query oder beliebige Objektattribute.
+Ohne `detail.placeholders` bleibt `{id}` die einzige URL-Variable. Mit diesem
+Block werden mehrere benannte Variablen aus kompilierten JMESPath-Ausdrücken
+unterstützt. Jeder Name muss `[A-Za-z_][A-Za-z0-9_]*` entsprechen und genau einmal
+im URL-Pfad vorkommen; unbenutzte oder nicht deklarierte Namen werden abgelehnt.
+Jeder Wert muss ein nicht leerer String sein und wird als undurchsichtiges
+URL-Pfadsegment kodiert; `.` und `..` werden abgelehnt. Platzhalter dürfen weder
+Schema, Host, Port, Query noch Fragment verändern. Es gibt kein Python-Formatting
+und keine Jinja-Ausführung in URLs.
 
 Generische Abrufe verwenden frische Clients ohne Social-Auth, Cookies, `.netrc`
 oder Umgebungs-Proxies, explizite Timeouts und begrenzte GET-Retries. Redirects
@@ -443,11 +450,261 @@ Adressen und verbindet direkt mit der geprüften IP unter ursprünglichem Host u
 TLS-SNI. Interne Netze sind keine implizit unterstützten Quellendestinationen.
 Fehlermeldungen enthalten keine vollständigen JSON-Antworten oder Request-URLs.
 
+## Mehrstufige Quellen vollständig in YAML
+
+Bei `detail.placeholders` verwendet die Engine privat den Kontext
+`{"list": <ausgewähltes JSON-Objekt>, "detail": <Detail-JSON-Objekt>}`.
+`list.fields` erstellt die Vorschau aus dem **rohen Listeneintrag**. Das globale
+`fields`-Mapping erstellt den endgültigen Inhalt aus dem kombinierten Kontext;
+`detail.fields` kann dieses vollständige Mapping ersetzen. Raw-JSON bleibt in
+privaten `SourceRecord`-Objekten des Adapters und gelangt nie in `ContentItem`,
+Jinja, SQLite oder Publisher. Ohne deklarierte Platzhalter bleibt das bisherige
+Mapping auf das einzelne JSON-Objekt erhalten.
+
+```yaml
+detail:
+  url: https://example.org/records/{record}/{slug}
+  root: item
+  placeholders:
+    record: list.record_id
+    slug: list.slug
+  identity_checks:
+    - left: list.record_id
+      right: detail.identifier
+fields:
+  id: list.record_id
+  title: detail.headline
+  text: list.summary || detail.body
+```
+
+Identitätsprüfungen werden beim Laden kompiliert. Beide Seiten müssen vorhandene,
+begrenzte skalare Werte ergeben und nach Wert **und Typ** übereinstimmen. Fehler
+nennen Quelle, Prüfnummer und Ausdrücke, niemals vollständige Antwortdaten.
+Die kanonische ID muss ebenfalls der Auswahl entsprechen.
+
+`identity` enthält genau `publication_key`, `content_key` und `revision`, jeweils
+als kompilierten Ausdruck. Die Werte werden schon für die Vorschau benötigt,
+weil dort Dubletten und aktive Versuche gefiltert werden. Nach dem Detailabruf
+werden sie erneut geprüft und dürfen sich nicht verändern. Explizite Identitäten
+sind 1–200 Zeichen lange sichere Kennungen (`[A-Za-z0-9_][A-Za-z0-9_.:-]*`).
+Ohne diesen Block gilt weiterhin `<source>:<id>`. `ContentItem.id` bleibt davon
+getrennt. Es gibt keine automatische Änderung oder Migration historischer Schlüssel.
+
+Request-lokale `assertions` ordnen JMESPath-Ausdrücken `type` und optional
+`required: true` zu. Unterstützte Typen: `identifier`, `string`, `object`,
+`strings` (Stringliste), `number` (endlich und nicht negativ), `date` (ISO-Tag),
+`time` (lokale ISO-Uhrzeit) und `url` (HTTP(S) ohne Zugangsdaten).
+Fehlende optionale Werte und `null` sind erlaubt. Kulturbytes aktiviert
+`skip_invalid: true`: fehlerhafte Listeneinträge werden gemeldet/übersprungen,
+ein ungültiger direkter Treffer führt auch neben einem gültigen Treffer zum Fehler.
+Fehlerhafte Hüllen und Detailantworten führen immer zum Abbruch. Doppelte IDs
+werden grundsätzlich abgelehnt; `list.allow_duplicate_ids: true` erhält ausdrücklich
+das bisherige Kulturbytes-Listenverhalten. Direkte Auswahl erfordert trotzdem
+genau einen Treffer, und die Publikationsreservierung verhindert doppelte Posts.
+
+`filters` werden auf validierte Listeneinträge angewandt. Jeder Filter hat
+`expression` und genau einen Operator: `equals`, `not_equals`, `truthy: true`
+oder `falsy: true`. Vergleiche sind typgenau. `legacy_selectors` enthält die
+beiden bestehenden CLI-Argumente `event_uuid` und `date_identifier`, jeweils mit
+einer Liste alternativer Ausdrücke. Alle Argumente müssen treffen. Die Engine
+kennt weder Kulturbytes-Feldnamen noch einen speziellen Kulturbytes-Selektor.
+
+`derived.<canonical_field>.concat` verbindet ausschließlich Literale und
+`{expr: <JMESPath>}`-Teile zu einem String. Es gibt keine beliebigen Funktionen,
+Python-Ausdrücke oder URL-Templates. Die fünf zusätzlichen JMESPath-Funktionen
+sind `trim(string|null)`, `join_text(separator, strings_or_nulls)`,
+`number_text(number|null)` (kompakte Zahlendarstellung), `time_hm(string)`
+(lokale ISO-Uhrzeit auf Minuten normalisieren) und `path_segment(string)`
+(opaque URL-Kodierung). Alle Ergebnisse durchlaufen die kanonische Validierung.
+Die Kulturbytes-YAML verwendet sie für URL, Adresse und bestehende Preisangaben;
+Marke, Hashtags und deren Priorität stehen nur in den Quelltemplates.
+
+Die vollständige mitgelieferte Kulturbytes-Definition lautet:
+
+```yaml
+name: kulturbytes
+adapter: json
+behavior:
+  skip_past: true
+media:
+  allowed_hosts:
+  - api.kulturbytes.de
+skip_invalid: true
+list:
+  allow_duplicate_ids: true
+  url: https://api.kulturbytes.de/api/events
+  method: GET
+  root: data.events
+  mode: collection
+  fields:
+    id: date_uuid
+    title: title
+    city: venue_city
+    location: venue_name
+    date: start_date
+    time: start_time || `null`
+  assertions:
+    uuid:
+      type: identifier
+      required: true
+    date_uuid:
+      type: identifier
+      required: true
+    date_slug:
+      type: identifier
+      required: true
+    release_status:
+      type: string
+      required: true
+    title:
+      type: string
+      required: true
+    start_date:
+      type: date
+      required: true
+    venue_name:
+      type: string
+    venue_city:
+      type: string
+    summary:
+      type: string
+    start_time:
+      type: time
+detail:
+  url: https://api.kulturbytes.de/api/event/{event_uuid}/date/{date_slug}
+  method: GET
+  root: data
+  mode: object
+  placeholders:
+    event_uuid: list.uuid
+    date_slug: list.date_slug
+  identity_checks:
+  - left: list.uuid
+    right: detail.uuid
+  - left: list.date_uuid
+    right: detail.date.uuid
+  - left: list.date_slug
+    right: detail.date.slug
+  assertions:
+    uuid:
+      type: identifier
+      required: true
+    title:
+      type: string
+      required: true
+    date:
+      type: object
+      required: true
+    date.uuid:
+      type: identifier
+      required: true
+    date.slug:
+      type: identifier
+      required: true
+    date.start_date:
+      type: date
+      required: true
+    subtitle:
+      type: string
+    description:
+      type: string
+    summary:
+      type: string
+    org_name:
+      type: string
+    date.venue_name:
+      type: string
+    date.venue_street:
+      type: string
+    date.venue_house_number:
+      type: string
+    date.venue_postal_code:
+      type: string
+    date.venue_city:
+      type: string
+    date.price_type:
+      type: string
+    date.currency:
+      type: string
+    images.main.alt:
+      type: string
+    tags:
+      type: strings
+    images:
+      type: object
+    images.main:
+      type: object
+    images.main.uuid:
+      type: identifier
+    images.main.url:
+      type: url
+    date.ticket_link:
+      type: url
+    date.min_price:
+      type: number
+    date.max_price:
+      type: number
+    date.end_date:
+      type: date
+    date.start_time:
+      type: time
+legacy_selectors:
+  event_uuid:
+  - uuid
+  date_identifier:
+  - date_uuid
+  - date_slug
+filters:
+- expression: release_status
+  equals: released
+identity:
+  publication_key: list.date_uuid
+  content_key: list.uuid
+  revision: list.date_slug
+fields:
+  id: list.date_uuid
+  title: detail.title
+  subtitle: detail.subtitle
+  text: trim(trim(list.summary) || detail.description)
+  city: detail.date.venue_city
+  location: detail.date.venue_name
+  address: >-
+    join_text(', ', [(detail.date.venue_street && join_text(' ', [detail.date.venue_street, detail.date.venue_house_number]))
+    || '', join_text(' ', [detail.date.venue_postal_code, detail.date.venue_city])])
+  date: detail.date.start_date
+  time: time_hm(detail.date.start_time || '00:00')
+  end_date: detail.date.end_date
+  image_url: detail.images.main.url || `null`
+  image_alt: trim(detail.images.main.alt || join('', ['Veranstaltungsbild zu ', detail.title]))
+  image_name: detail.images.main.uuid || list.date_uuid
+  organizer: detail.org_name
+  ticket_link: detail.date.ticket_link || `null`
+  tags: detail.tags
+  price: >-
+    (detail.date.price_type == 'free' && 'Eintritt frei') || (detail.date.min_price != `null` && join('',
+    ['Eintritt: ', number_text(detail.date.min_price), (detail.date.max_price != `null` && detail.date.max_price
+    != detail.date.min_price && join('', ['–', number_text(detail.date.max_price)])) || '', ' ', ((contains(keys(detail.date),
+    'currency') && [(detail.date.currency == `null` && 'None') || to_string(detail.date.currency)]) ||
+    ['EUR'])[0]])) || `null`
+derived:
+  link:
+    concat:
+    - https://kulturbytes.de/de/veranstaltung/
+    - expr: path_segment(list.uuid)
+    - /
+    - expr: path_segment(list.date_slug)
+```
+
+`trim(list.summary)` behandelt auch reine Leerzeichen als leer. Nur dann wird
+`detail.description` verwendet; `detail.summary` ist niemals die Textquelle.
+Tags stammen aus `detail.tags`; `#Kulturbytes`, Stadt und Instagram-Priorität
+werden in `templates/kulturbytes/*.j2` ergänzt. Plattformlimits bleiben im Renderer.
+
 ## JMESPath
 
 `root` und alle Werte unter `fields` sind beim Laden kompilierte JMESPath-Ausdrücke:
 `events`, `places`, `data.items`, `event.headline` oder `media[0].url`. Unterschiede
-zwischen fremden JSON-Strukturen bleiben im Mapping oder spezialisierten Adapter.
+zwischen fremden JSON-Strukturen bleiben in YAML-Mappings und Assertions.
 
 **Mapping bestimmt, woher Daten kommen. Templates bestimmen, wie sie erscheinen.**
 
@@ -491,7 +748,8 @@ Template-Variablen.
 
 Generische Quellen verwenden `<source>:<id>` als Veröffentlichungsschlüssel;
 dieselbe ID in zwei Quellen kollidiert dadurch nicht. Der mitgelieferte
-Kulturbytes-Adapter erhält seine bisherigen Termin-IDs und Fingerprints.
+Kulturbytes-Eintrag konfiguriert seine bisherigen Termin-IDs und Fingerprints
+explizit über `identity`; seine Schlüssel erhalten keinen `kulturbytes:`-Präfix.
 `storage.py` bietet die neutrale Schnittstelle; `legacy_storage.py`, `database.py`
 und `publications.py` kapseln bestehende Tabellen, Snapshots und Journaltransaktionen.
 Historische Spaltennamen werden ohne Datenmigration beibehalten. Reservierung,
@@ -677,7 +935,8 @@ bestätigten Post pro Termin; die Versuchshistorie steht im zusätzlichen Journa
 
 ## Schutz bei API-, Medien- und Veröffentlichungsfehlern
 
-Kulturbytes-Antworten werden unmittelbar am API-Eingang mit Pydantic geprüft.
+Kulturbytes-Antworten werden am API-Eingang durch generische, in YAML definierte
+Assertions und anschließend durch das strikte Pydantic-`ContentItem` geprüft.
 Ein ungültiger Listeneintrag wird gemeldet und übersprungen; gültige Nachbarn bleiben
 verwendbar. Eine ungültige Gesamtantwort oder direkt gewählte Veranstaltung führt
 zum Fehler. Event-UUID, Termin-UUID und Slug müssen zwischen Liste und Details
@@ -845,7 +1104,8 @@ Funktionen wirken auf alle Publisher.
 ```text
 src/kulturbytes_social/cli.py   Root-Click-Gruppe
 common/src/kulturbytes_common/
-  sources/kulturbytes_api.py  Gebündelte Kulturbytes-API-Grenze
+  sources/generic.py         Generische JSON-Listen-/Detail-Engine
+  sources/rules.py           Kompilierte Assertions und sichere Mapping-Funktionen
   media.py        Richtliniengebundene Bilddownloads
   network.py      Öffentliches HTTPS, DNS-Pinning und getrennte Origin-Pools
   formatting.py   Gemeinsame Markdown-Bereinigung

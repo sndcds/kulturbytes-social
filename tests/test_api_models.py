@@ -1,7 +1,26 @@
 from copy import deepcopy
 import click
 from dotenv_support import IsolatedEnvironmentTestCase
-from kulturbytes_common.sources.kulturbytes_models import validate_list, validate_detail
+from unittest.mock import patch
+import httpx
+from dotenv_support import HTTPXClient
+from kulturbytes_common.sources.loader import load_source
+
+
+def validate_list(payload, *, target=None):
+    adapter = load_source("kulturbytes")
+    with patch("kulturbytes_common.sources.fetching.source_client", side_effect=lambda: HTTPXClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    )):
+        items = adapter.list_items(None, target=target)
+    return [adapter._records[id(item)].raw_list for item in items]
+
+
+def validate_detail(payload):
+    adapter = load_source("kulturbytes")
+    raw = payload.get("data") if isinstance(payload, dict) else None
+    adapter.validate(adapter.definition.detail, raw)
+    return raw
 from test_publishers import EVENT, SUMMARY
 
 

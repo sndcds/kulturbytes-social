@@ -2,7 +2,10 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 from dotenv_support import IsolatedEnvironmentTestCase
 from kulturbytes_common.timezone import application_today
-from kulturbytes_common.sources.kulturbytes_api import should_publish
+from unittest.mock import Mock
+import sqlite3
+from kulturbytes_common.sources.models import ContentItem
+from kulturbytes_common.workflow import run_publisher
 
 
 class TimezoneTests(IsolatedEnvironmentTestCase):
@@ -13,7 +16,16 @@ class TimezoneTests(IsolatedEnvironmentTestCase):
                                   ('2026-07-02T00:30:00+00:00', '2026-07-02')]:
             today = application_today(datetime.fromisoformat(instant))
             self.assertEqual(today.isoformat(), expected)
-            with patch('kulturbytes_common.sources.kulturbytes_api.application_today', return_value=today):
-                for delta in (-1, 0, 1):
-                    self.assertEqual(should_publish({'release_status': 'released',
-                        'start_date': (today + timedelta(days=delta)).isoformat()}), delta >= 0)
+            for delta in (-1, 0, 1):
+                item = ContentItem(title="Calendar", date=(today + timedelta(days=delta)).isoformat())
+                adapter = Mock(name="source")
+                adapter.name = "calendar"
+                adapter.behavior.skip_past = True
+                adapter.list_items.return_value = [item]
+                adapter.get_item.return_value = item
+                publish = Mock()
+                with patch("kulturbytes_common.workflow.application_today", return_value=today):
+                    run_publisher(sqlite3.connect(":memory:"), publish, "test", dry_run=True,
+                                  limit=0, include_published=False, city=None, adapter=adapter,
+                                  target="today" if delta >= 0 else None)
+                self.assertEqual(publish.called, delta >= 0)

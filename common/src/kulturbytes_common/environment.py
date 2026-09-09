@@ -135,6 +135,7 @@ def set_dotenv_value(name: str, value: str) -> None:
             try:
                 Path(temporary).unlink(missing_ok=True)
             except OSError:
+                # Best-effort cleanup must not hide the sanitized persistence error.
                 pass
 
 

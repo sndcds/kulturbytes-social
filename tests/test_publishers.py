@@ -14,8 +14,8 @@ from click.testing import CliRunner
 from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
-from kulturbytes_common.sources.kulturbytes_api import build_address, build_hashtags, format_price
-from kulturbytes_common.sources.kulturbytes_media import download_image
+from canonical_support import build_address, build_hashtags, format_price
+from canonical_support import download_image
 from kulturbytes_common.selection import parse_selection
 
 ENV = {

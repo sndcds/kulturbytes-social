@@ -3,6 +3,9 @@ import tempfile
 import socket
 import unittest
 import httpx
+from contextlib import contextmanager
+from unittest.mock import Mock
+from kulturbytes_common.sources.fetching import source_client as real_source_client
 from kulturbytes_common.media_security import PublicMediaTransport
 
 HTTPXClient = httpx.Client
@@ -19,9 +22,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+@contextmanager
+def fixture_source_client():
+    # Older platform fixtures inject one borrowed client into the workflow.
+    # Generic source tests install their own factory, exercising isolated clients.
+    if isinstance(httpx.Client, Mock):
+        yield httpx.Client(trust_env=False, follow_redirects=False)
+    else:
+        with real_source_client() as client:
+            yield client
+
+
 class IsolatedEnvironmentTestCase(unittest.TestCase):
     def run(self, result=None):
-        with patch('kulturbytes_common.media_security.create_media_client', side_effect=mock_media_client), patch('socket.getaddrinfo', return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]), patch('kulturbytes_common.http.time.sleep'), tempfile.TemporaryDirectory() as directory, patch(
+        with patch('kulturbytes_common.sources.fetching.source_client', side_effect=fixture_source_client), patch('kulturbytes_common.media_security.create_media_client', side_effect=mock_media_client), patch('socket.getaddrinfo', return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]), patch('kulturbytes_common.http.time.sleep'), tempfile.TemporaryDirectory() as directory, patch(
             'kulturbytes_common.environment.get_env_file_path', return_value=Path(directory) / '.env',
         ):
             return super().run(result)

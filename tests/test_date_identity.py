@@ -87,11 +87,9 @@ class DateIdentityTests(IsolatedEnvironmentTestCase):
                                 self.assertEqual(len(requests), 2)
                                 self.assertEqual(self.records(database), before)
                                 self.assertEqual(event, original)
-                                for context in ['Terminkonsistenzfehler', 'event-1', '209901011830',
-                                                'date_uuid=date-1', 'abgebrochen']:
+                                for context in ['Quelle kulturbytes', 'Identitätsprüfung 2', 'list.date_uuid',
+                                                'detail.date.uuid', 'abgebrochen']:
                                     self.assertIn(context, result.output)
-                                if isinstance(invalid_date, dict) and invalid_date.get('uuid') == 'date-2':
-                                    self.assertIn('date-2', result.output)
 
     def test_interactive_failure_continues_with_next_matching_event(self):
         for module in PLATFORMS:
@@ -102,11 +100,29 @@ class DateIdentityTests(IsolatedEnvironmentTestCase):
                     module, Path(directory) / 'posts.sqlite3', [invalid, EVENT], ['--publish'], 'all\n',
                 )
                 self.assertEqual(result.exit_code, 0, result.output)
-                self.assertIn('Terminkonsistenzfehler', result.output)
+                self.assertIn('Identitätsprüfung 2', result.output)
                 self.assertEqual(len(requests), 3)
                 publish.assert_called_once()
                 self.assertEqual(publish.call_args.args[2].id, 'date-1')
                 self.assertFalse(publish.call_args.kwargs['dry_run'])
+
+    def test_parent_and_revision_mismatches_block_remote_mutation(self):
+        for module in PLATFORMS:
+            for field, check in (("parent", 1), ("revision", 3)):
+                with self.subTest(platform=module.__name__, field=field), tempfile.TemporaryDirectory() as directory:
+                    event = deepcopy(EVENT)
+                    if field == "parent":
+                        event["uuid"] = "other-parent"
+                    else:
+                        event["date"]["slug"] = "other-revision"
+                    result, requests, publish = self.run_cli(
+                        module, Path(directory) / "posts.sqlite3", [event],
+                        DIRECT + ["--publish"], "y\n",
+                    )
+                    self.assertEqual(result.exit_code, 1, result.output)
+                    self.assertIn(f"Identitätsprüfung {check}", result.output)
+                    self.assertEqual(len(requests), 2)
+                    publish.assert_not_called()
 
     def test_matching_identity_reaches_platform_in_direct_mode(self):
         for module in PLATFORMS:

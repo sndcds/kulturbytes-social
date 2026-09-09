@@ -15,7 +15,7 @@ from click.testing import CliRunner
 from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
-from kulturbytes_common.sources.kulturbytes_api import get_event_url
+from canonical_support import get_event_url
 from kulturbytes_common.formatting import strip_markdown
 from kulturbytes_instagram import cli as instagram
 

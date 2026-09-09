@@ -47,7 +47,9 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import kulturbytes_common
 assert Path(kulturbytes_common.__file__).is_relative_to(Path(sys.argv[1]))
-from kulturbytes_common.sources.loader import definitions
+from kulturbytes_common.sources.loader import definitions, load_source
+from kulturbytes_common.sources.generic import JsonSourceAdapter
+assert type(load_source("kulturbytes")) is JsonSourceAdapter
 from kulturbytes_common.sources.models import ContentItem
 from kulturbytes_common.rendering import TemplateRenderer
 assert set(definitions()) == {'kulturbytes','example-simple','example-nested','example-events','example-places','example-articles'}

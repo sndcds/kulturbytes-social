@@ -12,6 +12,7 @@ import test_generic_cli as generic_cli
 import yaml
 from click.testing import CliRunner
 from dotenv_support import HTTPXClient, IsolatedEnvironmentTestCase
+
 from kulturbytes_common.media_security import (
     PublicMediaTransport,
     media_response,
@@ -27,7 +28,6 @@ from kulturbytes_common.sources.errors import (
 from kulturbytes_common.sources.generic import JsonSourceAdapter
 from kulturbytes_common.sources.loader import definitions, load_definition
 from kulturbytes_common.sources.models import ContentItem
-
 from kulturbytes_social.cli import cli
 
 
@@ -269,13 +269,15 @@ class RequestTests(IsolatedEnvironmentTestCase):
 
         from kulturbytes_common.sources import fetching
 
-        factory = lambda: HTTPXClient(
-            transport=PinnedTransport(factory=lambda: httpx.MockTransport(handler)),
-            trust_env=False,
-        )
-        records = lambda value: [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (value, 443))
-        ]
+        def factory():
+            return HTTPXClient(
+                transport=PinnedTransport(factory=lambda: httpx.MockTransport(handler)),
+                trust_env=False,
+            )
+
+        def records(value):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (value, 443))]
+
         with (
             patch.object(fetching, "source_client", side_effect=factory),
             patch(
@@ -292,11 +294,14 @@ class RequestTests(IsolatedEnvironmentTestCase):
         ):
             calls = []
 
-            def handler(request):
+            def invalid_response_handler(request):
                 calls.append(request)
                 return payload
 
-            with self.fetcher(handler), self.assertRaises(SourceFetchError):
+            with (
+                self.fetcher(invalid_response_handler),
+                self.assertRaises(SourceFetchError),
+            ):
                 JsonSourceAdapter(self.definition()).list_items(None)
             self.assertEqual(len(calls), 1)
 

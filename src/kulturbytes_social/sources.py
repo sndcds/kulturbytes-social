@@ -1,6 +1,7 @@
 """Read-only local source configuration inspection, without HTTP or credentials."""
 
 import click
+
 from kulturbytes_common.rendering import TemplateRenderer
 from kulturbytes_common.sources.loader import definitions, load_source
 

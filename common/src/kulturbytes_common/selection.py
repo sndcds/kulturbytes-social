@@ -15,9 +15,7 @@ def parse_selection(
         "alle",
         "*",
     }:
-        return list(
-            range(count)
-        )
+        return list(range(count))
 
     result: set[int] = set()
 
@@ -31,73 +29,41 @@ def parse_selection(
 
         if "-" in part:
             try:
-                start_text, end_text = (
-                    part.split("-", 1)
-                )
+                start_text, end_text = part.split("-", 1)
 
-                start = int(
-                    start_text
-                )
+                start = int(start_text)
 
-                end = int(
-                    end_text
-                )
+                end = int(end_text)
 
             except ValueError as exc:
-                raise click.ClickException(
-                    f"Ungültige Auswahl: {part}"
-                ) from exc
+                raise click.ClickException(f"Ungültige Auswahl: {part}") from exc
 
             if start > end:
-                raise click.ClickException(
-                    f"Ungültiger Bereich: {part}"
-                )
+                raise click.ClickException(f"Ungültiger Bereich: {part}")
 
             for number in range(
                 start,
                 end + 1,
             ):
-                if (
-                    number < 1
-                    or number > count
-                ):
+                if number < 1 or number > count:
                     raise click.ClickException(
-                        (
-                            "Eintragsnummer außerhalb "
-                            f"des Bereichs: {number}"
-                        )
+                        (f"Eintragsnummer außerhalb des Bereichs: {number}")
                     )
 
-                result.add(
-                    number - 1
-                )
+                result.add(number - 1)
 
         else:
             try:
-                number = int(
-                    part
-                )
+                number = int(part)
 
             except ValueError as exc:
-                raise click.ClickException(
-                    f"Ungültige Auswahl: {part}"
-                ) from exc
+                raise click.ClickException(f"Ungültige Auswahl: {part}") from exc
 
-            if (
-                number < 1
-                or number > count
-            ):
+            if number < 1 or number > count:
                 raise click.ClickException(
-                    (
-                        "Eintragsnummer außerhalb "
-                        f"des Bereichs: {number}"
-                    )
+                    (f"Eintragsnummer außerhalb des Bereichs: {number}")
                 )
 
-            result.add(
-                number - 1
-            )
+            result.add(number - 1)
 
-    return sorted(
-        result
-    )
+    return sorted(result)

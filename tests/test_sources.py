@@ -7,6 +7,8 @@ from unittest.mock import patch
 import httpx
 import jmespath
 from dotenv_support import HTTPXClient, IsolatedEnvironmentTestCase
+from pydantic import ValidationError
+
 from kulturbytes_common.sources.errors import (
     SourceConfigurationError,
     SourceMappingError,
@@ -16,8 +18,7 @@ from kulturbytes_common.sources.errors import (
 from kulturbytes_common.sources.generic import JsonSourceAdapter
 from kulturbytes_common.sources.loader import definitions, load_definition, load_source
 from kulturbytes_common.sources.mapping import map_item
-from kulturbytes_common.sources.models import RenderedPost, ContentItem
-from pydantic import ValidationError
+from kulturbytes_common.sources.models import ContentItem, RenderedPost
 
 
 class SourceTests(IsolatedEnvironmentTestCase):
@@ -235,7 +236,9 @@ class SourceTests(IsolatedEnvironmentTestCase):
             ("@", [{"id": "1", "name": "Title"}]),
         ]:
             items, calls = self.fetch(payload, root=root, target="1")
-            self.assertEqual(items[0]._source_context.identity.publication_key, "test:1")
+            self.assertEqual(
+                items[0]._source_context.identity.publication_key, "test:1"
+            )
             self.assertEqual(len(calls), 1)
 
     def test_invalid_root_missing_target_and_duplicate_ids_fail_closed(self):

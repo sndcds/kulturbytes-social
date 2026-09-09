@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 import test_generic_core
 from dotenv_support import IsolatedEnvironmentTestCase
+from test_publishers import EVENT, SUMMARY
+
 from kulturbytes_common.rendering import TemplateRenderer
 from kulturbytes_common.sources.errors import (
     SourceConfigurationError,
@@ -15,7 +17,6 @@ from kulturbytes_common.sources.errors import (
 from kulturbytes_common.sources.generic import JsonSourceAdapter
 from kulturbytes_common.sources.loader import load_source
 from kulturbytes_common.sources.models import PublicationIdentity
-from test_publishers import EVENT, SUMMARY
 
 
 class MultistepTests(IsolatedEnvironmentTestCase):

@@ -1,13 +1,14 @@
 """Public CLI; platform implementations remain in their workspace packages."""
 
 import click
-from .attempts import attempts_command
-from .sources import sources_command
-from .publish import publish_command
 
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command
 from kulturbytes_mastodon import mastodon_command
+
+from .attempts import attempts_command
+from .publish import publish_command
+from .sources import sources_command
 
 
 @click.group()

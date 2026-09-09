@@ -41,6 +41,32 @@ class ImageURLTests(TestCase):
             with self.assertRaises(ValidationError):
                 ContentItem(title="Test", image_width=value)
 
+    def test_unknown_platform_keys_fail_closed(self):
+        for field, value in (("ratio", "4/5"), ("type", "jpg")):
+            for keys in (
+                {"instgram": value},
+                {"facebok": value},
+                {"instagram": value, "mastadon": value},
+                {"mastadon": value, "facebok": value},
+            ):
+                with self.subTest(field=field, keys=keys):
+                    with self.assertRaises(ValidationError) as raised:
+                        MediaPolicy.model_validate({"image": {field: keys}})
+                    unknown = sorted(set(keys) - {"instagram"})
+                    self.assertIn(
+                        "Unknown image platform(s): " + ", ".join(unknown),
+                        str(raised.exception),
+                    )
+        with self.assertRaises(ValidationError):
+            ImageSettings(ratio={"instagram": "4/5", "mastadon": "free"})
+
+    def test_valid_platform_keys_are_preserved(self):
+        ratios = {"facebook": "1200/630", "instagram": "4/5", "mastodon": "free"}
+        formats = {"facebook": "webp", "instagram": "jpg", "mastodon": "png"}
+        settings = ImageSettings(ratio=ratios, type=formats)
+        self.assertEqual(settings.ratio, ratios)
+        self.assertEqual(settings.type, formats)
+
     def test_platform_parameters_and_free_orientation(self):
         settings = load_source("kulturbytes").definition.media.image
         cases = [
@@ -69,18 +95,18 @@ class ImageURLTests(TestCase):
     def test_query_replacement_and_opt_in(self):
         url = "https://example.org/image?width=5&width=6&height=7&ratio=1:1&fit=cover&type=png&quality=90&x=1&x=2"
         settings = ImageSettings(
-            ratio={"test": "free"}, type={"test": "webp"}, max_width=100
+            ratio={"facebook": "free"}, type={"facebook": "webp"}, max_width=100
         )
-        result = image_url(url, settings, "test")
+        result = image_url(url, settings, "facebook")
         self.assertEqual(
             parse_qs(urlsplit(result).query),
             {"width": ["100"], "type": ["webp"], "quality": ["90"], "x": ["1", "2"]},
         )
-        self.assertEqual(image_url(url, None, "test"), url)
-        self.assertEqual(image_url(url, ImageSettings(), "test"), url)
-        self.assertIsNone(image_url(None, settings, "test"))
+        self.assertEqual(image_url(url, None, "facebook"), url)
+        self.assertEqual(image_url(url, ImageSettings(), "facebook"), url)
+        self.assertIsNone(image_url(None, settings, "facebook"))
         with self.assertRaises(click.ClickException):
-            image_url(url, ImageSettings(max_width=100, max_height=100), "test")
+            image_url(url, ImageSettings(max_width=100, max_height=100), "facebook")
 
 
 class ImageIntegrationTests(IsolatedEnvironmentTestCase):

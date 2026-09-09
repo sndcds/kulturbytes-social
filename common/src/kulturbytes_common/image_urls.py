@@ -8,6 +8,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import click
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+IMAGE_PLATFORMS = frozenset({"facebook", "instagram", "mastodon"})
+
 
 class ImageSettings(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
@@ -15,6 +17,14 @@ class ImageSettings(BaseModel):
     type: dict[str, Literal["jpg", "png", "webp"]] = Field(default_factory=dict)
     max_width: int | None = Field(default=None, ge=1, le=65535)
     max_height: int | None = Field(default=None, ge=1, le=65535)
+
+    @field_validator("ratio", "type")
+    @classmethod
+    def known_platforms(cls, values):
+        unknown = set(values) - IMAGE_PLATFORMS
+        if unknown:
+            raise ValueError("Unknown image platform(s): " + ", ".join(sorted(unknown)))
+        return values
 
     @field_validator("ratio")
     @classmethod

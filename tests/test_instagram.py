@@ -1,3 +1,4 @@
+from canonical_support import canonical
 import click
 import os
 import sqlite3
@@ -218,7 +219,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
     def test_caption_limit_preserves_url_and_required_hashtags(self):
         event = deepcopy(EVENT)
         event['summary'] = '**Langer Text** ' * 1000
-        caption = instagram.build_instagram_caption(event)
+        caption = instagram.build_instagram_caption(canonical(event))
         self.assertLessEqual(len(caption), 2200)
         self.assertIn(get_event_url(event), caption)
         self.assertNotIn('**', caption)
@@ -228,7 +229,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assertIn('#Flensburg', hashtags)
         event['title'] = 'A' * 2300
         with self.assertRaises(click.ClickException):
-            instagram.build_instagram_caption(event)
+            instagram.build_instagram_caption(canonical(event))
 
     def test_shared_markdown_normalization(self):
         self.assertEqual(strip_markdown(r'**Text** 7\. September [Website](https://example.org)'),

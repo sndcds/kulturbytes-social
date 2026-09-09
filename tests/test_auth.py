@@ -1,3 +1,4 @@
+from canonical_support import canonical
 import os
 import sqlite3
 import subprocess
@@ -198,10 +199,10 @@ class AuthTests(IsolatedEnvironmentTestCase):
                         module, 'download_image', return_value=(b'image', 'image/jpeg', 'image.jpg'),
                     ):
                         if status == 200:
-                            self.assertEqual(publish(client, EVENT), expected)
+                            self.assertEqual(publish(client, canonical(EVENT)), expected)
                         else:
                             with self.assertRaises(click.ClickException) as error:
-                                publish(client, EVENT)
+                                publish(client, canonical(EVENT))
                             self.assertNotIn(TOKEN, str(error.exception))
                             self.assertIn('[REDACTED]', str(error.exception))
                     self.assertEqual(len(requests), 1)

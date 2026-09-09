@@ -1,29 +1,26 @@
-"""Publish Kulturbytes event photos through the Instagram Content Publishing API."""
+"""Publish canonical photos through the Instagram Content Publishing API."""
+from functools import partial
+from kulturbytes_common import storage
+from kulturbytes_common.sources.models import SocialItem
+from kulturbytes_common.rendering import render_post
 
 import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from datetime import date
 from urllib.parse import urlsplit
 
 import click
 import httpx
 from kulturbytes_common.auth import remote_identifier
-from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
+from kulturbytes_common.publications import execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import (
     INSTAGRAM, credential_options, resolve_credential, warn_legacy, meta_candidate, persist_validated_meta,
 )
-from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import ResolvedValue, get_config
-from kulturbytes_common.events import (
-    build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
-)
-from kulturbytes_common.formatting import strip_markdown
-from kulturbytes_common.media import get_image_url
 from kulturbytes_common.media_security import media_response
 from kulturbytes_common.workflow import run_publisher
 
@@ -69,87 +66,14 @@ def load_config(*, allow_prompt: bool = False) -> InstagramConfig:
 
 
 def init_database() -> sqlite3.Connection:
-    conn = open_database(DATABASE_PATH or get_database_path("instagram"), "instagram")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS published_events (
-            date_uuid TEXT PRIMARY KEY,
-            event_uuid TEXT NOT NULL,
-            instagram_media_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            start_date TEXT NOT NULL,
-            start_time TEXT,
-            published_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    init_journal(conn)
-    conn.commit()
-    return conn
+    return storage.init_database('instagram', DATABASE_PATH)
 
 
-def remember_post(conn: sqlite3.Connection, event: dict, media_id: str, *, commit: bool = True) -> None:
-    event_date = event["date"]
-    # An explicitly confirmed repeat publication replaces the stored remote ID.
-    conn.execute("""
-        INSERT INTO published_events
-            (date_uuid, event_uuid, instagram_media_id, title, start_date, start_time)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(date_uuid) DO UPDATE SET
-            event_uuid=excluded.event_uuid,
-            instagram_media_id=excluded.instagram_media_id,
-            title=excluded.title, start_date=excluded.start_date,
-            start_time=excluded.start_time, published_at=CURRENT_TIMESTAMP
-    """, (event_date["uuid"], event["uuid"], media_id, event["title"],
-          event_date["start_date"], event_date.get("start_time")))
-    if commit:
-        conn.commit()
+remember_post = partial(storage.remember_post, platform='instagram')
 
 
-def build_instagram_caption(event: dict) -> str:
-    event_date = event["date"]
-    start = get_start_datetime(event)
-    header = [f"📅 {strip_markdown(event.get('title') or '')}"]
-    subtitle = strip_markdown(event.get("subtitle") or "")
-    if subtitle:
-        header.append(subtitle)
-    header.append(f"🗓 {start:%d.%m.%Y} · {start:%H:%M} Uhr")
-    end_date = event_date.get("end_date")
-    if end_date and end_date != event_date["start_date"]:
-        header.append(f"bis {date.fromisoformat(end_date):%d.%m.%Y}")
-    location = strip_markdown(event_date.get("venue_name") or "")
-    address = strip_markdown(build_address(event))
-    if location:
-        header.append(f"📍 {location}")
-    if address:
-        header.append(address)
-    price = format_price(event)
-    if price:
-        header.append(price)
-    organization = strip_markdown(event.get("org_name") or "")
-    if organization:
-        header.append(f"Veranstalter: {organization}")
-    if event_date.get("ticket_link"):
-        header.append(f"🎟 {event_date['ticket_link']}")
-
-    # Prioritize required hashtags, then fill remaining slots with event tags.
-    required = build_hashtags({"date": event_date}).split()
-    tags = list(required)
-    seen = {tag.casefold() for tag in tags}
-    for tag in build_hashtags(event).split():
-        if tag.casefold() not in seen and len(tags) < HASHTAG_LIMIT:
-            tags.append(tag)
-            seen.add(tag.casefold())
-    footer = f"👉 {get_event_url(event)}\n{' '.join(tags)}"
-    header_text = "\n".join(header)
-    fixed = f"{header_text}\n\n{footer}"
-    if len(fixed) > CAPTION_LIMIT:
-        raise click.ClickException("Instagram: Titel/Metadaten sind zu lang; Link und Hashtags werden nicht abgeschnitten.")
-    summary = strip_markdown(event.get("summary") or event.get("description") or "")
-    available = CAPTION_LIMIT - len(fixed) - 2
-    if summary and available > 1:
-        if len(summary) > available:
-            summary = summary[:available - 1].rstrip() + "…"
-        return f"{header_text}\n\n{summary}\n\n{footer}"
-    return fixed
+def build_instagram_caption(event: SocialItem) -> str:
+    return render_post(event, 'instagram').text
 
 
 def check_auth(config: InstagramConfig) -> None:
@@ -194,8 +118,8 @@ def require_id(payload: dict, token: str = "") -> str:
     return remote_identifier(media_id, "Instagram", token)
 
 
-def validate_image(client: httpx.Client, event: dict) -> str:
-    image_url = get_image_url(event)
+def validate_image(client: httpx.Client, event: SocialItem) -> str:
+    image_url = event.image_url
     if not image_url:
         raise click.ClickException("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
     with media_response(client, image_url) as response:
@@ -237,13 +161,14 @@ def publish_instagram_photo(
     return require_id(published, config.access_token)
 
 
-def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
+def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: SocialItem, dry_run: bool,
                   *, config: InstagramConfig | None = None, allow_repeat: bool = False) -> bool:
-    caption = build_instagram_caption(event)
+    post = render_post(event, 'instagram')
+    caption = post.text
     click.echo("\n" + "=" * 80)
     click.echo(caption)
     click.echo(f"\nZeichen: {len(caption)}/{CAPTION_LIMIT}")
-    click.echo(f"🖼 {get_image_url(event) or 'Kein Hauptbild vorhanden'}")
+    click.echo(f"🖼 {event.image_url or 'Kein Hauptbild vorhanden'}")
     click.echo("=" * 80)
     image_url = validate_image(client, event)
     if dry_run:
@@ -272,6 +197,8 @@ def authenticate() -> InstagramConfig:
 
 
 @click.command("instagram", help="Kulturbytes-Termine für Instagram auswählen, prüfen und veröffentlichen.")
+@click.option("--source", default="kulturbytes", show_default=True, help="Konfigurierte JSON-Quelle.")
+@click.option("--item-id", default=None, help="Quellenneutrale ID für die direkte Auswahl.")
 @credential_options("Instagram")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option("--dry-run/--publish", default=True, help="Vorschau (Standard) oder nach Bestätigung veröffentlichen.")
@@ -281,18 +208,18 @@ def authenticate() -> InstagramConfig:
 @click.option("--event-uuid", default=None, help="Event-UUID für die direkte Terminauswahl.")
 @click.option("--date-identifier", default=None, help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.")
 def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
-         event_uuid: str | None, date_identifier: str | None) -> None:
+         event_uuid: str | None, date_identifier: str | None, source: str = "kulturbytes", item_id: str | None = None) -> None:
     if check_auth_only:
         authenticate()
         return
     config = authenticate() if not dry_run else None
 
-    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: SocialItem, *, dry_run: bool) -> bool:
         return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
 
     run_publisher(
         conn=init_database(), publish_event=publish_with_config,
         user_agent="Kulturbytes-Instagram-Publisher/1.0", dry_run=dry_run,
         limit=limit, include_published=include_published, city=city,
-        event_uuid=event_uuid, date_identifier=date_identifier,
+        event_uuid=event_uuid, date_identifier=date_identifier, source=source, item_id=item_id,
     )

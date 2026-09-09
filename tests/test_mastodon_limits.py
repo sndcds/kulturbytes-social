@@ -1,3 +1,4 @@
+from canonical_support import canonical
 import os
 import sqlite3
 import tempfile
@@ -46,7 +47,7 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
                 self.assertEqual(len(requests), 3 if isinstance(response, httpx.ReadTimeout) else 1)
 
     def test_short_message_unchanged(self):
-        self.assertEqual(mastodon.build_mastodon_message(EVENT),
+        self.assertEqual(mastodon.build_mastodon_message(canonical(EVENT)),
                          '📅 Kulturabend\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus, Flensburg\n\n'
                          'Musik und Kultur.\n\nEintritt frei\n'
                          '👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n'
@@ -57,7 +58,7 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
         event['summary'] = 'Überraschung Musik 🎵 Kultur ' * 100
         for limit in [250, 500, 750]:
             with self.subTest(limit=limit):
-                message = mastodon.build_mastodon_message(event, limit)
+                message = mastodon.build_mastodon_message(canonical(event), limit)
                 self.assertLessEqual(len(message), limit)
                 self.assertIn(get_event_url(event), message)
                 self.assertTrue(message.endswith(build_hashtags(event)))
@@ -77,15 +78,15 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
         fixed.pop('org_name')
         fixed['date'].pop('ticket_link')
         fixed['date'].pop('price_type')
-        required_length = len(mastodon.build_mastodon_message(fixed))
-        message = mastodon.build_mastodon_message(event, required_length)
-        self.assertEqual(message, mastodon.build_mastodon_message(fixed))
-        message = mastodon.build_mastodon_message(event, required_length + len('Untertitel') + 1)
+        required_length = len(mastodon.build_mastodon_message(canonical(fixed)))
+        message = mastodon.build_mastodon_message(canonical(event), required_length)
+        self.assertEqual(message, mastodon.build_mastodon_message(canonical(fixed)))
+        message = mastodon.build_mastodon_message(canonical(event), required_length + len('Untertitel') + 1)
         self.assertIn('Untertitel', message)
         self.assertNotIn('Eintritt frei', message)
         self.assertNotIn('https://example.test', message)
         self.assertNotIn('Veranstalter:', message)
-        message = mastodon.build_mastodon_message(event, 750)
+        message = mastodon.build_mastodon_message(canonical(event), 750)
         self.assertIn(event['date']['ticket_link'], message)
         self.assertIn('Veranstalter: Veranstalter', message)
 
@@ -123,7 +124,7 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
             event['summary'] = 'Kultur und Überraschungen ' * 100
         for limit in [500, 750, None]:
             with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:
-                with patch.object(mastodon, 'build_mastodon_message', wraps=mastodon.build_mastodon_message) as build:
+                with patch.object(mastodon, 'render_post', wraps=mastodon.render_post) as build:
                     result, requests = self.run_cli(directory, events, limit, ['--publish'], 'all\ny\ny\n')
                 self.assertEqual(result.exit_code, 0, result.output)
                 self.assertEqual(build.call_count, 2)
@@ -141,13 +142,13 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
         event = deepcopy(EVENT)
         event['summary'] = ''
         event['date'].pop('price_type')
-        fixed = mastodon.build_mastodon_message(event)
-        self.assertEqual(mastodon.build_mastodon_message(event, len(fixed)), fixed)
+        fixed = mastodon.build_mastodon_message(canonical(event))
+        self.assertEqual(mastodon.build_mastodon_message(canonical(event), len(fixed)), fixed)
         with self.assertRaises(click.ClickException):
-            mastodon.build_mastodon_message(event, len(fixed) - 1)
+            mastodon.build_mastodon_message(canonical(event), len(fixed) - 1)
         event['tags'] = ['SehrLangerHashtag' * 100]
         with self.assertRaises(click.ClickException):
-            mastodon.build_mastodon_message(event, 500)
+            mastodon.build_mastodon_message(canonical(event), 500)
 
     def test_real_metadata_discovery_in_credential_free_dry_run(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(ENV, {}, clear=True):

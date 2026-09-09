@@ -2,6 +2,7 @@
 
 import click
 from .attempts import attempts_command
+from .sources import sources_command
 
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command
@@ -18,3 +19,5 @@ cli.add_command(mastodon_command)
 cli.add_command(instagram_command)
 
 cli.add_command(attempts_command)
+
+cli.add_command(sources_command)

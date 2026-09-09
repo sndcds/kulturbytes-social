@@ -10,6 +10,8 @@ import sqlite3
 from uuid import uuid4
 
 import click
+from .storage import record_for
+from .sources.models import SocialItem
 
 ACTIVE = ('reserved', 'publishing', 'remote_succeeded')
 STATES = (*ACTIVE, 'published', 'failed')
@@ -38,7 +40,8 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
         raise
 
 
-def content_fingerprint(platform: str, event: dict, message: str) -> str:
+def content_fingerprint(platform: str, event: SocialItem | dict, message: str) -> str:
+    event = record_for(event)
     material = {'platform': platform.lower(), 'event_uuid': event['uuid'],
                 'date_uuid': event['date']['uuid'], 'date_slug': event['date']['slug'],
                 'message': message}
@@ -143,8 +146,9 @@ def describe_attempt(attempt: dict) -> str:
             f"SHA256={attempt.get('content_sha256') or 'unbekannt'}")
 
 
-def reserve_attempt(conn: sqlite3.Connection, platform: str, event: dict, *, allow_repeat: bool = False,
+def reserve_attempt(conn: sqlite3.Connection, platform: str, event: SocialItem | dict, *, allow_repeat: bool = False,
                     message: str = "", target_ref: str | None = None) -> str:
+    event = record_for(event)
     attempt_uuid = str(uuid4())
     date_uuid = event['date']['uuid']
     target_ref = validate_target_ref(platform, target_ref)
@@ -213,10 +217,11 @@ def mark_failed(conn: sqlite3.Connection, attempt_uuid: str, error_class: str) -
         _transition(conn, attempt_uuid, 'failed', ('reserved', 'publishing'), error_class=error_class)
 
 
-def execute_publication(conn: sqlite3.Connection, platform: str, event: dict,
+def execute_publication(conn: sqlite3.Connection, platform: str, event: SocialItem | dict,
                         publish: Callable[[], tuple[str, str | None]],
                         finalize: Callable[[str, str | None], None], *, allow_repeat: bool = False,
                         message: str = "", target_ref: str | None = None) -> tuple[str, str | None]:
+    event = record_for(event)
     attempt_uuid = reserve_attempt(conn, platform, event, allow_repeat=allow_repeat, message=message, target_ref=target_ref)
     token = _current.set((conn, attempt_uuid))
     remote_id = None

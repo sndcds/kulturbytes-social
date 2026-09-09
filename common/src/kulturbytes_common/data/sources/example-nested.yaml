@@ -1,0 +1,12 @@
+name: example-nested
+adapter: json
+endpoint: https://example.org/api/items
+root: data.items
+fields:
+  id: event.id
+  title: event.headline
+  text: event.description
+  city: event.location.city
+  date: event.date
+  image_url: media[0].url
+  tags: event.tags

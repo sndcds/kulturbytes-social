@@ -1,4 +1,4 @@
-"""Strict boundary models; publisher dictionaries remain a compatibility interface."""
+"""Strict Kulturbytes API boundary models used inside its source adapter."""
 from datetime import date, time
 from typing import Annotated
 from urllib.parse import urlsplit

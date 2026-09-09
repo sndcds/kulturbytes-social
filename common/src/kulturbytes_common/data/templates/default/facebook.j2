@@ -1,0 +1,45 @@
+📅 {{ title }}
+{% if subtitle %}
+
+{{ subtitle | trim }}
+{% endif %}
+{% if date %}
+
+🗓 {{ date | dateformat }}{{ ' · ' ~ time[:5] ~ ' Uhr' if time else '' }}
+{% endif %}
+{% if end_date and end_date != date %}
+bis {{ end_date | dateformat }}
+{% endif %}
+{% if venue %}
+📍 {{ venue }}
+{% endif %}
+{% if address %}
+{{ address }}
+{% elif city %}
+{{ city }}
+{% endif %}
+{% if text %}
+
+{{ text | trim }}
+{% endif %}
+{% if organizer %}
+
+Veranstalter: {{ organizer }}
+{% endif %}
+{% if price %}
+
+{{ price }}
+{% endif %}
+{% if ticket_link %}
+
+🎟 Tickets: {{ ticket_link }}
+{% endif %}
+{% if link %}
+
+👉 Mehr Informationen: {{ link }}
+{% endif %}
+{% set social_tags = tags | hashtags(city=city) %}
+{% if social_tags %}
+
+{{ social_tags }}
+{% endif %}

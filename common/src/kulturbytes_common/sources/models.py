@@ -36,6 +36,8 @@ class ContentItem(BaseModel):
     date: str | None = None
     time: str | None = None
     end_date: str | None = None
+    image_width: int | None = Field(default=None, ge=1)
+    image_height: int | None = Field(default=None, ge=1)
     image_url: str | None = None
     image_alt: str | None = None
     image_name: str | None = None

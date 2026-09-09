@@ -20,7 +20,12 @@ class TemplateTests(IsolatedEnvironmentTestCase):
             for platform in ("facebook", "instagram", "mastodon"):
                 with self.subTest(case=case["name"], platform=platform):
                     self.assertEqual(
-                        renderer.render(from_kulturbytes(case["event"]), platform).text,
+                        renderer.render(
+                            from_kulturbytes(case["event"]).model_copy(
+                                update={"image_width": 2400, "image_height": 1600}
+                            ),
+                            platform,
+                        ).text,
                         case[platform],
                     )
 

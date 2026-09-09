@@ -15,6 +15,7 @@ from kulturbytes_common.credentials import (
 )
 from kulturbytes_common.environment import get_config
 from kulturbytes_common.media import download_post_image as download_image
+from kulturbytes_common.media import post_image_url
 from kulturbytes_common.publications import begin_remote_mutation, execute_publication
 from kulturbytes_common.rendering import render_post
 from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
@@ -83,7 +84,7 @@ def print_event_preview(
 
     click.echo(build_message(event) if message is None else message)
 
-    image_url = event.image_url
+    image_url = post_image_url(event, "facebook")
 
     if image_url:
         click.echo()
@@ -107,6 +108,7 @@ def publish_facebook_photo(
     ) = download_image(
         client,
         event,
+        platform="facebook",
     )
 
     url = (

@@ -92,7 +92,13 @@ class InstagramTests(IsolatedEnvironmentTestCase):
             if path == "/v26.0/123/media":
                 self.assertEqual(request.method, "POST")
                 data = parse_qs(request.content.decode())
-                self.assertEqual(data["image_url"], [EVENT["images"]["main"]["url"]])
+                self.assertEqual(
+                    data["image_url"],
+                    [
+                        EVENT["images"]["main"]["url"]
+                        + "?ratio=4%3A5&height=1920&type=jpg"
+                    ],
+                )
                 self.assertIn(SUMMARY["summary"], data["caption"][0])
                 self.assertNotIn(EVENT["summary"], data["caption"][0])
                 return httpx.Response(200, json={"id": "456"})

@@ -760,6 +760,44 @@ den vollständigen zusammengesetzten Schlüssel.
 
 ## Quellenspezifische Medienrichtlinien
 
+### Pluto-Bildverarbeitung
+
+Für Quellen mit [Pluto-Bildserver](https://github.com/sndcds/pluto) aktiviert
+`media.image` die serverseitige Verarbeitung über URL-Parameter:
+
+```yaml
+media:
+  allowed_hosts: [api.kulturbytes.de]
+  image:
+    ratio: {instagram: "4/5", facebook: "1200/630", mastodon: free}
+    type: {instagram: jpg, facebook: webp, mastodon: jpg}
+    max_width: 1920
+    max_height: 1920
+```
+
+`ratio` akzeptiert positive ganzzahlige Verhältnisse (`4/5` oder `4:5`) und
+`free`; `type` akzeptiert `jpg`, `png`, `webp`. Größenlimits sind ganze Zahlen
+zwischen 1 und 65535. Fehlende Plattformwerte bedeuten freies Verhältnis bzw.
+keine Formatvorgabe. Ohne `media.image` bleibt die Bild-URL unverändert.
+Die Quelle muss die Pluto-Parameter unterstützen; dies wird nicht am Hostnamen erkannt.
+
+Der Publisher übersetzt etwa Instagram zu `?ratio=4%3A5&height=1920&type=jpg`
+und Facebook zu `?ratio=1200%3A630&width=1920&type=webp`. Pluto übernimmt den
+Zuschnitt am gespeicherten Fokuspunkt, Verkleinerung und Konvertierung.
+Für `free` wird kein Ratio-Parameter gesendet. Bei zwei Größenlimits benötigt
+dieser Modus die positiven kanonischen Felder `image_width` und `image_height`,
+um die begrenzende Kante zu wählen; fehlende Metadaten führen zu einem klaren Fehler.
+Kulturbytes mappt diese aus `detail.images.main.width` und `.height`.
+Andere Quellen können ihre entsprechenden Metadaten auf dieselben Felder abbilden.
+
+Vorhandene `ratio`, `fit`, `width` und `height` werden ersetzt; eine konfigurierte
+Formatvorgabe ersetzt `type`. Andere Query-Parameter bleiben erhalten.
+Vorschau und Veröffentlichung verwenden dieselbe verarbeitete URL; Instagram
+prüft weiterhin JPEG und übergibt diese öffentliche URL an Meta. Die gebündelte
+Instagram-Konfiguration verwendet deshalb `jpg`. Es gibt keine lokale Bildkonvertierung,
+neues Hosting oder zusätzliche Abhängigkeiten. Alle lokalen Bildabrufe behalten
+Hostfreigabe, DNS-Pinning und getrennten Transport ohne Social-Zugangsdaten.
+
 `media.allowed_hosts` ist eine explizite Freigabe durch den Betreiber, keine
 Information aus der API-Antwort. Der Standard ist eine leere Liste: Bilder werden
 abgelehnt. Der mitgelieferte Kulturbytes-Eintrag erlaubt `api.kulturbytes.de`;

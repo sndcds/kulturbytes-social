@@ -10,6 +10,8 @@ import click
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .image_urls import ImageSettings
+
 
 class MediaPolicyError(click.ClickException):
     pass
@@ -17,6 +19,7 @@ class MediaPolicyError(click.ClickException):
 
 class MediaPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
+    image: ImageSettings | None = None
     allowed_hosts: frozenset[str] = Field(default_factory=frozenset)
 
     @field_validator("allowed_hosts", mode="before")

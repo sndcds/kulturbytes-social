@@ -6,7 +6,7 @@ from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import click
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ImageSettings(BaseModel):
@@ -27,6 +27,21 @@ class ImageSettings(BaseModel):
                     "Ratio must be free or positive integers separated by / or :"
                 )
         return values
+
+    @model_validator(mode="after")
+    def nonzero_dimensions(self):
+        for value in self.ratio.values():
+            if value == "free":
+                continue
+            numerator, denominator = re.split(r"[/:]", value)
+            aspect = Fraction(int(numerator), int(denominator))
+            if aspect <= Fraction(1, 10000):
+                raise ValueError("Ratio is below Pluto's supported minimum")
+            if (self.max_width and self.max_width / aspect < 1) or (
+                self.max_height and self.max_height * aspect < 1
+            ):
+                raise ValueError("Image limits would produce a zero-sized edge")
+        return self
 
 
 def image_url(

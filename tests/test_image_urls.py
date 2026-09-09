@@ -30,6 +30,9 @@ class ImageURLTests(TestCase):
             {"ratio": {"facebook": "0/5"}},
             {"ratio": {"facebook": "4/0"}},
             {"ratio": {"facebook": "nan"}},
+            {"ratio": {"facebook": "1/99999"}},
+            {"ratio": {"facebook": "4/5"}, "max_height": 1},
+            {"ratio": {"facebook": "1200/630"}, "max_width": 1},
             {"unknown": True},
         ):
             with self.subTest(value=value), self.assertRaises(ValidationError):

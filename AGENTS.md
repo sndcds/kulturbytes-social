@@ -1088,7 +1088,7 @@ httpx.Timeout(
 Suggested options:
 
 ```python
-follow_redirects=True
+follow_redirects = True
 ```
 
 Set a meaningful `User-Agent`, for example:
@@ -1212,7 +1212,8 @@ Before changing behavior, inspect the existing implementation rather than rewrit
 
 ## Continuous integration
 
-- Every PR must pass the full unittest suite; workflows run on PRs targeting main and pushes to main.
+- Every PR must pass the full unittest suite on Python 3.12 and 3.13 and the configured Ruff formatting/lint checks; workflows run on PRs targeting main and pushes to main.
+- Keep these checks and CodeQL required by main branch protection, including for administrators. Do not bypass failing checks.
 - CodeQL scans Python with security-and-quality queries. Do not suppress findings without justification.
 - Workflows and tests must not require live social credentials or call live publication endpoints.
 - GitHub Actions must use least-privilege permissions and official, version-pinned actions.

@@ -3,15 +3,14 @@
 import sqlite3
 
 from .database import get_database_path, open_database
-from .sources.models import ContentItem
 from .publication_records import record_for
+from .sources.models import ContentItem
 
 COLUMNS = {
     "facebook": "facebook_post_id",
     "instagram": "instagram_media_id",
     "mastodon": "mastodon_status_id",
 }
-
 
 
 def item_key(item: ContentItem) -> str:

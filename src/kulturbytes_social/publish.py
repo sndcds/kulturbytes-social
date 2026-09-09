@@ -1,6 +1,7 @@
 """Generic entry point delegating to the existing authenticated platform flows."""
 
 import click
+
 from kulturbytes_common.sources.cli import DEFAULT_SOURCE
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command

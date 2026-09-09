@@ -7,11 +7,11 @@ from unittest.mock import patch
 import httpx
 from click.testing import CliRunner
 from dotenv_support import HTTPXClient, IsolatedEnvironmentTestCase
+
 from kulturbytes_common.sources.models import RenderedPost
 from kulturbytes_facebook import cli as facebook
 from kulturbytes_instagram import cli as instagram
 from kulturbytes_mastodon import cli as mastodon
-
 from kulturbytes_social.cli import cli
 
 
@@ -45,7 +45,13 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
         self.calls = []
 
     def invoke(
-        self, platform="facebook", args=(), input="", payload=None, source="flat", generic_command=False
+        self,
+        platform="facebook",
+        args=(),
+        input="",
+        payload=None,
+        source="flat",
+        generic_command=False,
     ):
         def respond(request):
             self.calls.append(request)
@@ -114,7 +120,10 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
             patch.object(instagram, "authenticate", side_effect=instagram.load_config),
         ):
             result = CliRunner().invoke(
-                cli, (["publish", "--platform", platform] if generic_command else [platform]) + ["--source", source, *args], input=input
+                cli,
+                (["publish", "--platform", platform] if generic_command else [platform])
+                + ["--source", source, *args],
+                input=input,
             )
         return result
 

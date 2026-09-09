@@ -25,3 +25,16 @@ members = ["common", "facebook", "mastodon", "instagram"]
 kulturbytes-facebook = { workspace = true }
 kulturbytes-mastodon = { workspace = true }
 kulturbytes-instagram = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.6",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "common/src", "facebook/src", "instagram/src", "mastodon/src"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

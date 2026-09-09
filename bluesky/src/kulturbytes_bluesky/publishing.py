@@ -4,7 +4,8 @@ import base64
 import binascii
 import re
 from datetime import datetime, timezone
-from urllib.parse import quote
+from ipaddress import IPv6Address
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import click
 import httpx
@@ -32,17 +33,69 @@ def valid_cid(value: object) -> bool:
     return len(data) == 36 and data[:4] in (b"\x01\x55\x12\x20", b"\x01\x71\x12\x20")
 
 
+def facet_uri(value: str) -> str:
+    """Normalize a visible HTTP IRI locally; never include unsafe input in errors."""
+    try:
+        # urlsplit strips some controls, so validate before parsing.
+        if any(c.isspace() or ord(c) < 32 or 127 <= ord(c) <= 159 for c in value):
+            raise ValueError
+        if re.search(r"%(?![0-9a-fA-F]{2})", value):
+            raise ValueError
+        parts = urlsplit(value)
+        if (
+            parts.scheme not in ("http", "https")
+            or not parts.hostname
+            or parts.username is not None
+            or parts.password is not None
+            or parts.netloc.endswith(":")
+        ):
+            raise ValueError
+        port = parts.port  # Raises for malformed or out-of-range ports.
+        hostname = parts.hostname
+        if ":" in hostname:
+            if "%" in hostname:  # Scoped IPv6 addresses are not public link hosts.
+                raise ValueError
+            host = f"[{IPv6Address(hostname)}]"
+            if not re.fullmatch(r"\[[^\]]+\](?::[0-9]+)?", parts.netloc):
+                raise ValueError
+        else:
+            host = hostname.encode("idna").decode("ascii").lower()
+            if len(host.removesuffix(".")) > 253 or any(
+                not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                for label in host.removesuffix(".").split(".")
+            ):
+                raise ValueError
+        if port is not None:
+            host += ":" + parts.netloc.rsplit(":", 1)[1]
+        # RFC 3986 pchar plus path/query delimiters; validated escapes stay intact.
+        safe = "/:@!$&'()*+,;=-._~%"
+        return urlunsplit(
+            (
+                parts.scheme.lower(),
+                host,
+                quote(parts.path, safe=safe),
+                quote(parts.query, safe=safe + "?"),
+                quote(parts.fragment, safe=safe + "?"),
+            )
+        )
+    except (ValueError, UnicodeError):
+        raise click.ClickException("Bluesky: ungültige Link-URL im Beitrag.") from None
+
+
 def link_facets(text: str) -> list[dict]:
     facets = []
     for match in re.finditer(r"https?://[^\s<>]+", text):
         url = match[0].rstrip(".,!?;:")
+        normalized_uri = facet_uri(url)
         start = len(text[: match.start()].encode("utf-8"))
         end = start + len(url.encode("utf-8"))
         if start < end:
             facets.append(
                 {
                     "index": {"byteStart": start, "byteEnd": end},
-                    "features": [{"$type": "app.bsky.richtext.facet#link", "uri": url}],
+                    "features": [
+                        {"$type": "app.bsky.richtext.facet#link", "uri": normalized_uri}
+                    ],
                 }
             )
     return facets

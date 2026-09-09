@@ -329,6 +329,113 @@ class BlueskyTests(IsolatedEnvironmentTestCase):
         result = self.invoke(["bluesky", "--check-auth"], handler=broken)
         self.assertNotIn(PASSWORD, result.output + str(result.exception))
 
+    def test_facet_uri_normalization_preserves_visible_utf8_ranges(self):
+        cases = [
+            ("https://example.org/über", "https://example.org/%C3%BCber"),
+            ("https://münchen.example/path", "https://xn--mnchen-3ya.example/path"),
+            (
+                "https://example.org/search?q=grün",
+                "https://example.org/search?q=gr%C3%BCn",
+            ),
+            ("https://example.org/page#über", "https://example.org/page#%C3%BCber"),
+            ("https://example.org/a%20b", "https://example.org/a%20b"),
+            ("https://example.org:8443/path", "https://example.org:8443/path"),
+            ("https://example.org/foo", "https://example.org/foo"),
+            (
+                "https://EXAMPLE.org/a%2fb?q=a/b&x=é#café",
+                "https://example.org/a%2fb?q=a/b&x=%C3%A9#caf%C3%A9",
+            ),
+            ("http://example.org:80/a", "http://example.org:80/a"),
+            ("https://[2001:db8::1]:8443/über", "https://[2001:db8::1]:8443/%C3%BCber"),
+        ]
+        for visible, normalized in cases:
+            with self.subTest(visible=visible):
+                prefix = "👩‍💻 café "
+                text = prefix + visible + ", weiter."
+                facets = publishing.link_facets(text)
+                self.assertEqual(len(facets), 1)
+                facet = facets[0]
+                self.assertEqual(facet["features"][0]["uri"], normalized)
+                self.assertEqual(
+                    facet["index"]["byteStart"], len(prefix.encode("utf-8"))
+                )
+                self.assertEqual(
+                    facet["index"]["byteEnd"], len((prefix + visible).encode("utf-8"))
+                )
+                self.assertEqual(
+                    text.encode("utf-8")[
+                        facet["index"]["byteStart"] : facet["index"]["byteEnd"]
+                    ].decode("utf-8"),
+                    visible,
+                )
+        self.assertEqual(
+            publishing.facet_uri("HTTPS://EXAMPLE.ORG/foo"), "https://example.org/foo"
+        )
+
+    def test_multiple_unicode_facets_and_trailing_punctuation(self):
+        urls = ["https://example.org/über", "https://münchen.example/a?q=grün#über"]
+        text = f"👩‍💻 café {urls[0]}, schön 🌍 {urls[1]}!"
+        facets = publishing.link_facets(text)
+        self.assertEqual(len(facets), 2)
+        self.assertLess(facets[0]["index"]["byteEnd"], facets[1]["index"]["byteStart"])
+        for facet, visible in zip(facets, urls, strict=True):
+            offsets = facet["index"]
+            self.assertEqual(
+                text.encode("utf-8")[offsets["byteStart"] : offsets["byteEnd"]].decode(
+                    "utf-8"
+                ),
+                visible,
+            )
+        for punctuation in ".,!?;:":
+            visible = "https://example.org/a,b!c;d:e?q=x:y"
+            facet = publishing.link_facets(visible + punctuation)[0]
+            self.assertEqual(facet["features"][0]["uri"], visible)
+            self.assertEqual(facet["index"]["byteEnd"], len(visible.encode("utf-8")))
+
+    def test_facet_uri_rejects_unsafe_candidates_without_echoing_input(self):
+        invalid = [
+            "https://user@example.org/path",
+            "https://user:secret@example.org/path",
+            "https://example.org:bad/path",
+            "https://example.org:65536/path",
+            "https://example.org:/path",
+            "https:///path",
+            "ftp://example.org/path",
+            "https://example.org/a b",
+            "https://example.org/a\tb",
+            "https://example.org/a\nb",
+            "https://example.org/\x00",
+            "https://example.org/\x7f",
+            "https://example.org/\x85",
+            "https://example.org/%zz",
+            "https://example.org/%2",
+            "https://example.org/%",
+            "https://bad_host.example/path",
+            "https://example..org/path",
+            "https://example.org\\evil/path",
+            "https://[invalid]/path",
+            "https://[::1]garbage/path",
+            "https://[fe80::1%25eth0]/path",
+        ]
+        for candidate in invalid:
+            with (
+                self.subTest(candidate=candidate),
+                self.assertRaises(click.ClickException) as raised,
+            ):
+                publishing.facet_uri(candidate)
+            self.assertEqual(
+                str(raised.exception), "Bluesky: ungültige Link-URL im Beitrag."
+            )
+        for candidate in invalid[:6] + [
+            "https://example.org/%zz",
+            "https://example.org/\x00",
+        ]:
+            with self.assertRaises(click.ClickException) as raised:
+                publishing.link_facets("Text " + candidate)
+            self.assertEqual(
+                str(raised.exception), "Bluesky: ungültige Link-URL im Beitrag."
+            )
+
     def test_text_post_identity_facets_and_journal(self):
         conn = self.connection()
         with self.client() as client, patch("click.confirm", return_value=True):
@@ -361,12 +468,18 @@ class BlueskyTests(IsolatedEnvironmentTestCase):
         self.assertLessEqual(
             facets[0]["index"]["byteEnd"], facets[1]["index"]["byteStart"]
         )
-        for facet in facets:
+        for facet, visible, uri in zip(
+            facets,
+            ("https://example.org/über", "https://example.org/two"),
+            ("https://example.org/%C3%BCber", "https://example.org/two"),
+            strict=True,
+        ):
             offsets = facet["index"]
             self.assertEqual(
                 text.encode()[offsets["byteStart"] : offsets["byteEnd"]].decode(),
-                facet["features"][0]["uri"],
+                visible,
             )
+            self.assertEqual(facet["features"][0]["uri"], uri)
         for secret in (PASSWORD, JWT, REFRESH):
             self.assertNotIn(secret, "\n".join(conn.iterdump()))
 

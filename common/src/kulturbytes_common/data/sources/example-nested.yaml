@@ -10,3 +10,8 @@ fields:
   date: event.date
   image_url: media[0].url
   tags: event.tags
+mode: collection
+media:
+  allowed_hosts: [images.example.org]
+behavior:
+  skip_past: true

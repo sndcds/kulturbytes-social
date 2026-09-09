@@ -1,6 +1,7 @@
+from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
 from functools import partial
 from kulturbytes_common import storage
-from kulturbytes_common.sources.models import SocialItem, RenderedPost
+from kulturbytes_common.sources.models import ContentItem, RenderedPost
 from kulturbytes_common.rendering import render_post
 from kulturbytes_common.media import download_post_image as download_image
 
@@ -65,12 +66,12 @@ def init_database() -> sqlite3.Connection:
 remember_post = partial(storage.remember_post, platform='facebook')
 
 
-def build_message(event: SocialItem) -> str:
+def build_message(event: ContentItem) -> str:
     return render_post(event, 'facebook').text
 
 
 def print_event_preview(
-    event: SocialItem, message: str | None = None,
+    event: ContentItem, message: str | None = None,
 ) -> None:
     click.echo()
     click.echo("=" * 80)
@@ -92,7 +93,7 @@ def print_event_preview(
 
 def publish_facebook_photo(
     client: httpx.Client,
-    event: SocialItem | RenderedPost,
+    event: ContentItem | RenderedPost,
     *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
@@ -147,7 +148,7 @@ def publish_facebook_photo(
 
 def publish_text_post(
     client: httpx.Client,
-    event: SocialItem | RenderedPost,
+    event: ContentItem | RenderedPost,
     *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
@@ -186,7 +187,7 @@ def publish_text_post(
 def publish_event(
     client: httpx.Client,
     conn: sqlite3.Connection,
-    event: SocialItem,
+    event: ContentItem,
     dry_run: bool,
     *, config: FacebookConfig | None = None, allow_repeat: bool = False,
 ) -> bool:
@@ -203,7 +204,7 @@ def publish_event(
         return False
 
     if not click.confirm(
-        "Diesen Termin jetzt auf Facebook veröffentlichen?",
+        "Diesen Inhalt jetzt auf Facebook veröffentlichen?",
         default=False,
     ):
         click.echo(
@@ -229,8 +230,8 @@ def publish_event(
     return True
 
 
-@click.command("facebook", help="Kulturbytes-Termine für Facebook auswählen, prüfen und veröffentlichen.")
-@click.option("--source", default="kulturbytes", show_default=True, help="Konfigurierte JSON-Quelle.")
+@click.command("facebook", help="Inhalte für Facebook auswählen, prüfen und veröffentlichen.")
+@click.option("--source", default=DEFAULT_SOURCE, show_default=True, help="Konfigurierte JSON-Quelle.")
 @click.option("--item-id", default=None, help="Quellenneutrale ID für die direkte Auswahl.")
 @credential_options("Facebook")
 @click.option("--resolve-page-token", is_flag=True, help="Veraltet: Legacy-Page-Token ableiten; mit Meta-Token identisch zu --check-auth.")
@@ -251,7 +252,7 @@ def publish_event(
     default=50,
     show_default=True,
     help=(
-        "Maximale Anzahl Events in der Auswahl. "
+        "Maximale Anzahl Einträge in der Auswahl. "
         "0 zeigt alle."
     ),
 )
@@ -259,7 +260,7 @@ def publish_event(
     "--include-published",
     is_flag=True,
     help=(
-        "Auch bereits veröffentlichte Events "
+        "Auch bereits veröffentlichte Inhalte "
         "in der Auswahl anzeigen."
     ),
 )
@@ -276,13 +277,13 @@ def publish_event(
     "--event-uuid",
     type=str,
     default=None,
-    help="Event-UUID für die direkte Auswahl eines einzelnen Termins.",
+    help="Kulturbytes-Kompatibilität: Event-UUID; benötigt --date-identifier.",
 )
 @click.option(
     "--date-identifier",
     type=str,
     default=None,
-    help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
+    help="Kulturbytes-Kompatibilität: Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
 def facebook_command(
     check_auth_only: bool,
@@ -292,13 +293,13 @@ def facebook_command(
     include_published: bool,
     city: str | None,
     event_uuid: str | None,
-    date_identifier: str | None, source: str = "kulturbytes", item_id: str | None = None) -> None:
+    date_identifier: str | None, source: str = DEFAULT_SOURCE, item_id: str | None = None) -> None:
     if check_auth_only or resolve_page_token:
         authenticate(force=resolve_page_token)
         return
     config = authenticate() if not dry_run else None
 
-    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: SocialItem, *, dry_run: bool) -> bool:
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: ContentItem, *, dry_run: bool) -> bool:
         try:
             return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
         except httpx.RequestError:
@@ -308,14 +309,14 @@ def facebook_command(
             for secret in config.secrets if config else ():
                 message = redact(message, secret)
             raise click.ClickException(message) from None
+    adapter, target = prepare_source(source, legacy_selector=(event_uuid, date_identifier), item_id=item_id)
     run_publisher(
         conn=init_database(),
-        publish_event=publish_with_config,
+        publish_item=publish_with_config,
         user_agent="Kulturbytes-Facebook-Publisher/1.2",
         dry_run=dry_run,
         limit=limit,
         include_published=include_published,
         city=city,
-        event_uuid=event_uuid,
-        date_identifier=date_identifier, source=source, item_id=item_id,
+        adapter=adapter, target=target,
     )

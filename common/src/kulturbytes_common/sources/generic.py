@@ -1,59 +1,68 @@
-"""Configured JSON collections; sources never inherit a publisher's HTTP state."""
+"""Configured content collections and objects, optionally enriched through detail GETs."""
 
 import click
 import httpx
-from jmespath.exceptions import JMESPathError
 
-from kulturbytes_common.http import safe_get
-
-from .errors import SourceMappingError, SourceNotFound, SourceValidationError
-from .loader import SourceDefinition
+from .errors import SourceNotFound, SourceValidationError
+from .fetching import fetch
+from .loader import RequestDefinition, SourceDefinition
 from .mapping import map_item
-from .models import PublicationIdentity, SocialItem
-
-
-def source_client() -> httpx.Client:
-    return httpx.Client(
-        timeout=httpx.Timeout(connect=10, read=60, write=60, pool=10),
-        headers={
-            "User-Agent": "Kulturbytes-Social-Source/1.0",
-            "Accept": "application/json",
-        },
-        follow_redirects=False,
-        trust_env=False,
-    )
+from .models import ContentItem, PublicationIdentity, SourceContext
 
 
 class JsonSourceAdapter:
     def __init__(self, definition: SourceDefinition) -> None:
         self.definition = definition
         self.name = definition.name
+        self.behavior = definition.behavior
+        self._resolved: set[int] = set()
 
-    def list_items(
-        self, client: httpx.Client, *, target: str | tuple[str, str] | None = None
-    ) -> list[SocialItem]:
-        # Deliberately ignore the caller's client: no social auth, cookies, proxies or netrc.
-        try:
-            with source_client() as source:
-                response = safe_get(source, self.definition.endpoint)
-                response.raise_for_status()
-                raw = response.json()
-            collection = self.definition.root.search(raw)
-        except (httpx.HTTPError, ValueError, JMESPathError, click.ClickException):
-            raise SourceMappingError(
-                f"Quelle {self.name}: JSON-Abruf oder root-Auswertung fehlgeschlagen."
-            ) from None
-        if not isinstance(collection, list):
-            raise SourceMappingError(
-                f"Quelle {self.name}: root muss eine Liste ergeben."
+    def resolve_legacy_selector(self, selector: tuple[str | None, str | None]):
+        if any(value is not None for value in selector):
+            raise click.UsageError(
+                "Diese Quelle unterstützt keine Legacy-Selektoren; bitte --item-id verwenden."
             )
-        items = [map_item(self.name, self.definition.fields, raw) for raw in collection]
+        return None
+
+    def _items(
+        self, request: RequestDefinition, *, item_id: str | None = None
+    ) -> list[ContentItem]:
+        items = [
+            map_item(self.name, request.fields or self.definition.fields, raw)
+            for raw in fetch(self.name, request, item_id=item_id)
+        ]
         ids = [item.id for item in items if item.id is not None]
         if len(ids) != len(set(ids)):
             raise SourceValidationError(f"Quelle {self.name}: doppelte id.")
         for item in items:
             key = f"{self.name}:{item.id}" if item.id is not None else ""
-            item._origin = PublicationIdentity(self.name, key, key, item.id or "")
+            item._source_context = SourceContext(
+                self.name,
+                PublicationIdentity(key, key, item.id or ""),
+                self.definition.media,
+            )
+        return items
+
+    def _detail(self, item_id: str) -> ContentItem:
+        items = self._items(self.definition.detail, item_id=item_id)
+        # A detail response must identify exactly the requested item, not silently redirect identity.
+        if len(items) != 1 or items[0].id != item_id:
+            raise SourceValidationError(
+                f"Quelle {self.name}: Detail-ID stimmt nicht eindeutig mit der Auswahl überein."
+            )
+        self._resolved.add(id(items[0]))
+        return items[0]
+
+    def list_items(
+        self, client: httpx.Client, *, target: str | None = None
+    ) -> list[ContentItem]:
+        if target is not None and self.definition.detail:
+            return [self._detail(target)]
+        items = self._items(self.definition.listing)
+        if self.definition.detail and any(item.id is None for item in items):
+            raise SourceValidationError(
+                f"Quelle {self.name}: Detailabruf benötigt id im Listen-Mapping."
+            )
         if target is not None:
             items = [item for item in items if item.id == target]
             if len(items) != 1:
@@ -62,5 +71,7 @@ class JsonSourceAdapter:
                 )
         return items
 
-    def get_item(self, client: httpx.Client, item: SocialItem) -> SocialItem:
+    def get_item(self, client: httpx.Client, item: ContentItem) -> ContentItem:
+        if self.definition.detail and id(item) not in self._resolved:
+            return self._detail(item.id)
         return item

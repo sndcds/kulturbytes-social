@@ -3,12 +3,12 @@ from jmespath.parser import ParsedResult
 from pydantic import ValidationError
 
 from .errors import SourceMappingError, SourceValidationError
-from .models import SocialItem
+from .models import ContentItem
 
 
 def map_item(
     name: str, expressions: dict[str, ParsedResult], raw: object
-) -> SocialItem:
+) -> ContentItem:
     values = {}
     for field, expression in expressions.items():
         try:
@@ -18,7 +18,7 @@ def map_item(
                 f"Quelle {name}: Mapping für {field} fehlgeschlagen."
             ) from None
     try:
-        return SocialItem.model_validate(values)
+        return ContentItem.model_validate(values)
     except ValidationError as exc:
         # Only field names chosen from the fixed canonical schema, never Pydantic input values.
         fields = ", ".join(sorted({str(error["loc"][0]) for error in exc.errors()}))

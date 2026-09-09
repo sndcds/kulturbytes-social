@@ -1,2 +1,7 @@
 name: kulturbytes
 adapter: kulturbytes
+media:
+  allowed_hosts:
+    - api.kulturbytes.de
+behavior:
+  skip_past: true

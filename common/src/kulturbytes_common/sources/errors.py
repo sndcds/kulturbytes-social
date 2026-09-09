@@ -25,3 +25,7 @@ class SourceValidationError(SourceError):
 
 class TemplateRenderingError(SourceError):
     pass
+
+
+class SourceFetchError(SourceMappingError):
+    """A request failed before mapping; retained under mapping errors for callers."""

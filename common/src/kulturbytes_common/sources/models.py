@@ -7,23 +7,31 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
+from ..network import MediaPolicy
+
 
 @dataclass(frozen=True)
 class PublicationIdentity:
-    source: str
-    key: str
-    parent: str
+    publication_key: str
+    content_key: str
     revision: str
 
 
-class SocialItem(BaseModel):
+@dataclass(frozen=True)
+class SourceContext:
+    source_name: str
+    identity: PublicationIdentity
+    media_policy: MediaPolicy
+
+
+class ContentItem(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
     id: str | None = Field(default=None, min_length=1, max_length=200)
     title: str = Field(min_length=1)
     subtitle: str | None = None
     text: str | None = None
     city: str | None = None
-    venue: str | None = None
+    location: str | None = None
     address: str | None = None
     date: str | None = None
     time: str | None = None
@@ -37,7 +45,13 @@ class SocialItem(BaseModel):
     price: str | None = None
     ticket_link: str | None = None
     # Bookkeeping is not a mapped field and is never exposed to Jinja.
-    _origin: PublicationIdentity | None = PrivateAttr(default=None)
+    _source_context: SourceContext | None = PrivateAttr(default=None)
+
+    @property
+    def media_policy(self) -> MediaPolicy:
+        return (
+            self._source_context.media_policy if self._source_context else MediaPolicy()
+        )
 
     @field_validator("title", "id")
     @classmethod
@@ -106,5 +120,13 @@ class RenderedPost(BaseModel):
     image_url: str | None = None
     image_alt: str | None = None
     image_name: str | None = None
-    _url = field_validator("image_url")(SocialItem.valid_url.__func__)
-    _name = field_validator("image_name")(SocialItem.safe_filename.__func__)
+    _source_context: SourceContext | None = PrivateAttr(default=None)
+
+    @property
+    def media_policy(self) -> MediaPolicy:
+        return (
+            self._source_context.media_policy if self._source_context else MediaPolicy()
+        )
+
+    _url = field_validator("image_url")(ContentItem.valid_url.__func__)
+    _name = field_validator("image_name")(ContentItem.safe_filename.__func__)

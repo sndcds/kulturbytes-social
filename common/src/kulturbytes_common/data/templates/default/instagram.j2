@@ -1,4 +1,4 @@
-📅 {{ title }}
+{{ title }}
 {% if subtitle %}
 {{ subtitle }}
 {% endif %}
@@ -8,8 +8,8 @@
 {% if end_date and end_date != date %}
 bis {{ end_date | dateformat }}
 {% endif %}
-{% if venue %}
-📍 {{ venue }}
+{% if location %}
+📍 {{ location }}
 {% endif %}
 {% if address %}
 {{ address }}
@@ -29,7 +29,7 @@ Veranstalter: {{ organizer }}
 
 {{ text }}
 {% endif %}
-{% set social_tags = tags | hashtags(city=city, priority=['Kulturbytes', city], limit=5) %}
+{% set social_tags = tags | hashtags(city=city, priority=[city], limit=5) %}
 {% if link or social_tags %}
 
 {% endif %}

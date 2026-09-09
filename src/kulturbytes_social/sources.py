@@ -24,3 +24,36 @@ def validate_source(source: str) -> None:
     click.echo(
         f"✓ Quelle {adapter.name}: YAML, Mapping und Templates gültig; keine HTTP-Anfrage ausgeführt."
     )
+
+
+@sources_command.command("show")
+@click.argument("source")
+def show_source(source: str) -> None:
+    """Sichere lokale Metadaten ohne Header-, Query- oder Credential-Werte."""
+    from urllib.parse import urlsplit
+
+    adapter = load_source(source)
+    definition = adapter.definition
+    renderer = TemplateRenderer()
+    renderer.validate(adapter.name)
+    click.echo(f"name: {definition.name}\nadapter: {definition.adapter}")
+    if definition.listing:
+        url = urlsplit(definition.listing.url)
+        click.echo(f"list host/path: {url.hostname}{url.path}")
+        click.echo(f"mode: {definition.listing.mode}")
+    else:
+        click.echo("list: adapter-managed")
+    click.echo(
+        f"detail: {'yes' if definition.detail else 'adapter-managed' if not definition.listing else 'no'}"
+    )
+    click.echo("fields: " + ", ".join(sorted(definition.fields)))
+    click.echo(
+        "media allowed_hosts: " + ", ".join(sorted(definition.media.allowed_hosts))
+    )
+    click.echo(f"skip_past: {definition.behavior.skip_past}")
+    for platform in ("facebook", "instagram", "mastodon"):
+        override = any(
+            (root / definition.name / f"{platform}.j2").is_file()
+            for root in renderer.roots
+        )
+        click.echo(f"{platform} template override: {'yes' if override else 'no'}")

@@ -1,7 +1,8 @@
+from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
 """Publish canonical photos through the Instagram Content Publishing API."""
 from functools import partial
 from kulturbytes_common import storage
-from kulturbytes_common.sources.models import SocialItem
+from kulturbytes_common.sources.models import ContentItem
 from kulturbytes_common.rendering import render_post
 
 import re
@@ -25,7 +26,7 @@ from kulturbytes_common.media_security import media_response
 from kulturbytes_common.workflow import run_publisher
 
 CAPTION_LIMIT = 2200
-HASHTAG_LIMIT = 5  # Conservative application cap, including Kulturbytes and city.
+HASHTAG_LIMIT = 5  # Conservative application cap for all sources.
 POLL_ATTEMPTS = 5
 POLL_INTERVAL = 60
 DATABASE_PATH = None  # Optional in-process override; resolve configuration lazily.
@@ -72,7 +73,7 @@ def init_database() -> sqlite3.Connection:
 remember_post = partial(storage.remember_post, platform='instagram')
 
 
-def build_instagram_caption(event: SocialItem) -> str:
+def build_instagram_caption(event: ContentItem) -> str:
     return render_post(event, 'instagram').text
 
 
@@ -118,11 +119,11 @@ def require_id(payload: dict, token: str = "") -> str:
     return remote_identifier(media_id, "Instagram", token)
 
 
-def validate_image(client: httpx.Client, event: SocialItem) -> str:
+def validate_image(client: httpx.Client, event: ContentItem) -> str:
     image_url = event.image_url
     if not image_url:
         raise click.ClickException("Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich.")
-    with media_response(client, image_url) as response:
+    with media_response(client, image_url, event.media_policy) as response:
         prefix = b""
         for chunk in response.iter_bytes():
             prefix += chunk
@@ -161,7 +162,7 @@ def publish_instagram_photo(
     return require_id(published, config.access_token)
 
 
-def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: SocialItem, dry_run: bool,
+def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: ContentItem, dry_run: bool,
                   *, config: InstagramConfig | None = None, allow_repeat: bool = False) -> bool:
     post = render_post(event, 'instagram')
     caption = post.text
@@ -174,7 +175,7 @@ def publish_event(client: httpx.Client, conn: sqlite3.Connection, event: SocialI
     if dry_run:
         click.secho("DRY RUN: kein Instagram-Post veröffentlicht.", fg="yellow")
         return False
-    if not click.confirm("Diesen Termin jetzt auf Instagram veröffentlichen?", default=False):
+    if not click.confirm("Diesen Inhalt jetzt auf Instagram veröffentlichen?", default=False):
         click.echo("Übersprungen.")
         return False
     config = config or authenticate()
@@ -196,30 +197,31 @@ def authenticate() -> InstagramConfig:
     return config
 
 
-@click.command("instagram", help="Kulturbytes-Termine für Instagram auswählen, prüfen und veröffentlichen.")
-@click.option("--source", default="kulturbytes", show_default=True, help="Konfigurierte JSON-Quelle.")
+@click.command("instagram", help="Inhalte für Instagram auswählen, prüfen und veröffentlichen.")
+@click.option("--source", default=DEFAULT_SOURCE, show_default=True, help="Konfigurierte JSON-Quelle.")
 @click.option("--item-id", default=None, help="Quellenneutrale ID für die direkte Auswahl.")
 @credential_options("Instagram")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option("--dry-run/--publish", default=True, help="Vorschau (Standard) oder nach Bestätigung veröffentlichen.")
-@click.option("--limit", type=click.IntRange(min=0), default=50, show_default=True, help="Termine in der Auswahl; 0 zeigt alle.")
-@click.option("--include-published", is_flag=True, help="Bereits veröffentlichte Termine mit zusätzlicher Rückfrage anbieten.")
+@click.option("--limit", type=click.IntRange(min=0), default=50, show_default=True, help="Einträge in der Auswahl; 0 zeigt alle.")
+@click.option("--include-published", is_flag=True, help="Bereits veröffentlichte Inhalte mit zusätzlicher Rückfrage anbieten.")
 @click.option("--city", default=None, help="Nach Stadt filtern, z.B. Flensburg.")
-@click.option("--event-uuid", default=None, help="Event-UUID für die direkte Terminauswahl.")
-@click.option("--date-identifier", default=None, help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.")
+@click.option("--event-uuid", default=None, help="Kulturbytes-Kompatibilität: Event-UUID; benötigt --date-identifier.")
+@click.option("--date-identifier", default=None, help="Kulturbytes-Kompatibilität: Termin-Slug oder Termin-UUID; benötigt --event-uuid.")
 def instagram_command(check_auth_only: bool, dry_run: bool, limit: int, include_published: bool, city: str | None,
-         event_uuid: str | None, date_identifier: str | None, source: str = "kulturbytes", item_id: str | None = None) -> None:
+         event_uuid: str | None, date_identifier: str | None, source: str = DEFAULT_SOURCE, item_id: str | None = None) -> None:
     if check_auth_only:
         authenticate()
         return
     config = authenticate() if not dry_run else None
 
-    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: SocialItem, *, dry_run: bool) -> bool:
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: ContentItem, *, dry_run: bool) -> bool:
         return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
 
+    adapter, target = prepare_source(source, legacy_selector=(event_uuid, date_identifier), item_id=item_id)
     run_publisher(
-        conn=init_database(), publish_event=publish_with_config,
+        conn=init_database(), publish_item=publish_with_config,
         user_agent="Kulturbytes-Instagram-Publisher/1.0", dry_run=dry_run,
         limit=limit, include_published=include_published, city=city,
-        event_uuid=event_uuid, date_identifier=date_identifier, source=source, item_id=item_id,
+        adapter=adapter, target=target,
     )

@@ -1,34 +1,61 @@
 """The only adapter that knows Kulturbytes discovery/detail field names."""
 
+from typing import TYPE_CHECKING
+
 import httpx
 from pydantic import ValidationError
 
-from kulturbytes_common.events import (
+from kulturbytes_common.sources.kulturbytes_api import (
     build_address,
     build_hashtags,
     format_price,
     get_event_details,
     get_event_url,
     get_events,
-    should_publish,
 )
-from kulturbytes_common.media import get_image_url
 
 from .errors import SourceNotFound, SourceValidationError
-from .models import PublicationIdentity, SocialItem
+from .kulturbytes_media import get_image_url
+from .models import ContentItem, PublicationIdentity, SourceContext
+
+if TYPE_CHECKING:
+    from .loader import SourceDefinition
 
 
-def from_kulturbytes(event: dict) -> SocialItem:
+def bundled_definition() -> "SourceDefinition":
+    from pathlib import Path
+
+    from .loader import load_definition
+
+    return load_definition(
+        Path(__file__).resolve().parents[1] / "data/sources/kulturbytes.yaml"
+    )
+
+
+def context_for(definition, date_id: str, parent: str, revision: str) -> SourceContext:
+    # Preserve the bundled source's existing journal keys; aliases have their own namespace.
+    key = (
+        date_id if definition.name == "kulturbytes" else f"{definition.name}:{date_id}"
+    )
+    return SourceContext(
+        definition.name, PublicationIdentity(key, parent, revision), definition.media
+    )
+
+
+def from_kulturbytes(
+    event: dict, definition: "SourceDefinition | None" = None
+) -> ContentItem:
+    definition = definition or bundled_definition()
     detail = event["date"]
     image = (event.get("images") or {}).get("main") or {}
     try:
-        item = SocialItem(
+        item = ContentItem(
             id=detail["uuid"],
             title=event["title"],
             subtitle=event.get("subtitle"),
             text=(event.get("summary") or event.get("description") or "").strip(),
             city=detail.get("venue_city"),
-            venue=detail.get("venue_name"),
+            location=detail.get("venue_name"),
             address=build_address(event),
             date=detail["start_date"],
             time=(detail.get("start_time") or "00:00")[:5],
@@ -48,21 +75,32 @@ def from_kulturbytes(event: dict) -> SocialItem:
         raise SourceValidationError(
             "Quelle kulturbytes: ungültige kanonische Detaildaten."
         ) from None
-    item._origin = PublicationIdentity(
-        "kulturbytes", detail["uuid"], event["uuid"], detail["slug"]
+    item._source_context = context_for(
+        definition, detail["uuid"], event["uuid"], detail["slug"]
     )
     return item
 
 
 class KulturbytesSourceAdapter:
-    name = "kulturbytes"
-
-    def __init__(self) -> None:
+    def __init__(self, definition: "SourceDefinition | None" = None) -> None:
+        self.definition = definition or bundled_definition()
+        self.name = self.definition.name
+        self.behavior = self.definition.behavior
         self.summaries: dict[int, dict] = {}
+
+    def resolve_legacy_selector(self, selector: tuple[str | None, str | None]):
+        import click
+
+        parent, date = selector
+        if (parent is None) != (date is None):
+            raise click.UsageError(
+                "--event-uuid und --date-identifier müssen gemeinsam angegeben werden."
+            )
+        return (parent, date) if parent is not None else None
 
     def list_items(
         self, client: httpx.Client, *, target: str | tuple[str, str] | None = None
-    ) -> list[SocialItem]:
+    ) -> list[ContentItem]:
         events = get_events(
             client, target=target if isinstance(target, tuple) else None
         )
@@ -82,29 +120,29 @@ class KulturbytesSourceAdapter:
                 )
         items = []
         for event in events:
-            if not should_publish(event):
+            if event["release_status"] != "released":
                 continue
             try:
-                item = SocialItem(
+                item = ContentItem(
                     id=event["date_uuid"],
                     title=event["title"],
                     date=event["start_date"],
                     time=event.get("start_time") or None,
                     city=event.get("venue_city"),
-                    venue=event.get("venue_name"),
+                    location=event.get("venue_name"),
                 )
             except ValidationError:
                 raise SourceValidationError(
                     "Quelle kulturbytes: ungültige kanonische Listendaten."
                 ) from None
-            item._origin = PublicationIdentity(
-                self.name, item.id, event["uuid"], event["date_slug"]
+            item._source_context = context_for(
+                self.definition, item.id, event["uuid"], event["date_slug"]
             )
             self.summaries[id(item)] = event
             items.append(item)
         return items
 
-    def get_item(self, client: httpx.Client, item: SocialItem) -> SocialItem:
+    def get_item(self, client: httpx.Client, item: ContentItem) -> ContentItem:
         summary = self.summaries[id(item)]
         event = get_event_details(client, summary)
         if (
@@ -118,5 +156,6 @@ class KulturbytesSourceAdapter:
                 f"Detail-date_uuid={event['date']['uuid']}. Veröffentlichung abgebrochen."
             )
         return from_kulturbytes(
-            {**event, "summary": (summary.get("summary") or "").strip()}
+            {**event, "summary": (summary.get("summary") or "").strip()},
+            self.definition,
         )

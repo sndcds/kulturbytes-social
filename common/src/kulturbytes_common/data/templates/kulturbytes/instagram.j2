@@ -1,10 +1,8 @@
-{{ title }}
+📅 {{ title }}
 {% if subtitle %}
-
-{{ subtitle | trim }}
+{{ subtitle }}
 {% endif %}
 {% if date %}
-
 🗓 {{ date | dateformat }}{{ ' · ' ~ time[:5] ~ ' Uhr' if time else '' }}
 {% endif %}
 {% if end_date and end_date != date %}
@@ -18,28 +16,26 @@ bis {{ end_date | dateformat }}
 {% elif city %}
 {{ city }}
 {% endif %}
-{% if text %}
-
-{{ text | trim }}
-{% endif %}
-{% if organizer %}
-
-Veranstalter: {{ organizer }}
-{% endif %}
 {% if price %}
-
 {{ price }}
 {% endif %}
+{% if organizer %}
+Veranstalter: {{ organizer }}
+{% endif %}
 {% if ticket_link %}
+🎟 {{ ticket_link }}
+{% endif %}
+{% if text %}
 
-🎟 Tickets: {{ ticket_link }}
+{{ text }}
+{% endif %}
+{% set social_tags = tags | hashtags(city=city, priority=['Kulturbytes', city], limit=5) %}
+{% if link or social_tags %}
+
 {% endif %}
 {% if link %}
-
-👉 Mehr Informationen: {{ link }}
+👉 {{ link }}
 {% endif %}
-{% set social_tags = tags | hashtags(city=city) %}
 {% if social_tags %}
-
 {{ social_tags }}
 {% endif %}

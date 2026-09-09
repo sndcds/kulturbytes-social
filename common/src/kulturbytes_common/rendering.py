@@ -8,11 +8,10 @@ from pathlib import Path
 from jinja2 import StrictUndefined, TemplateError, meta, nodes
 from jinja2.sandbox import SandboxedEnvironment
 
-from kulturbytes_common.events import normalize_hashtag
-from kulturbytes_common.formatting import strip_markdown
+from kulturbytes_common.formatting import normalize_hashtag, strip_markdown
 from kulturbytes_common.sources.errors import TemplateRenderingError
 from kulturbytes_common.sources.loader import NAME
-from kulturbytes_common.sources.models import RenderedPost, SocialItem
+from kulturbytes_common.sources.models import ContentItem, RenderedPost
 from kulturbytes_common.sources.paths import config_roots
 
 
@@ -103,7 +102,7 @@ class TemplateRenderer:
                     tree = self.environment.parse(code)
                     if (
                         meta.find_undeclared_variables(tree)
-                        - SocialItem.model_fields.keys()
+                        - ContentItem.model_fields.keys()
                     ):
                         raise TemplateRenderingError(
                             "Template enthält unbekannte Variablen."
@@ -136,12 +135,15 @@ class TemplateRenderer:
 
     def render(
         self,
-        item: SocialItem,
+        item: ContentItem,
         platform: str,
         *,
-        source: str = "kulturbytes",
+        source: str | None = None,
         max_length: int | None = None,
     ) -> RenderedPost:
+        source = source or (
+            item._source_context.source_name if item._source_context else "default"
+        )
         template = self.template(source, platform)
         values = item.model_dump()
         if platform != "facebook":
@@ -149,7 +151,7 @@ class TemplateRenderer:
                 "title",
                 "subtitle",
                 "text",
-                "venue",
+                "location",
                 "city",
                 "address",
                 "organizer",
@@ -213,21 +215,18 @@ class TemplateRenderer:
                     break
                 available -= max(1, len(candidate) - limit)
             # Custom templates remain responsible for including protected content.
-            priority = (
-                ["Kulturbytes", values["city"]] if platform == "instagram" else []
-            )
-            protected_tags = hashtags(
-                values["tags"],
-                city=values["city"],
-                priority=priority,
-                limit=5 if platform == "instagram" else None,
-            ).split()
+            protected_tags = hashtags(values["tags"], city=values["city"]).split()
             if item.link and item.link not in text:
                 raise TemplateRenderingError(
                     f"{platform.title()}: Pflicht-Link fehlt im Template."
                 )
             tokens = set(re.findall(r"(?<!\w)#[\w]+", text))
-            if not set(protected_tags).issubset(tokens):
+            required_count = (
+                min(5, len(protected_tags))
+                if platform == "instagram"
+                else len(protected_tags)
+            )
+            if len(set(protected_tags) & tokens) < required_count:
                 raise TemplateRenderingError(
                     f"{platform.title()}: vollständige Hashtags fehlen im Template."
                 )
@@ -235,12 +234,14 @@ class TemplateRenderer:
                 raise TemplateRenderingError(
                     "Instagram: maximal fünf Hashtags erlaubt."
                 )
-        return RenderedPost(
+        post = RenderedPost(
             text=text,
             image_url=item.image_url,
             image_alt=item.image_alt or f"Bild zu {item.title}",
             image_name=item.image_name or "image",
         )
+        post._source_context = item._source_context
+        return post
 
 
 @lru_cache(maxsize=8)
@@ -249,9 +250,9 @@ def _renderer(roots: tuple[Path, ...]) -> TemplateRenderer:
 
 
 def render_post(
-    item: SocialItem, platform: str, *, max_length: int | None = None
+    item: ContentItem, platform: str, *, max_length: int | None = None
 ) -> RenderedPost:
-    source = item._origin.source if item._origin else "default"
+    source = item._source_context.source_name if item._source_context else "default"
     return _renderer(tuple(config_roots("templates"))).render(
         item, platform, source=source, max_length=max_length
     )

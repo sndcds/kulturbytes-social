@@ -5,6 +5,17 @@ behavior:
 media:
   allowed_hosts:
   - api.kulturbytes.de
+  image:
+    ratio:
+      instagram: 4/5
+      facebook: 1200/630
+      mastodon: free
+    type:
+      instagram: webp
+      facebook: webp
+      mastodon: jpg
+    max_width: 1920
+    max_height: 1920
 skip_invalid: true
 list:
   allow_duplicate_ids: true

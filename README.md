@@ -1,30 +1,79 @@
 # kulturbytes-social
 
-kulturbytes-social ist ein konfigurierbarer Python-Publisher, der strukturierte
-JSON-Quellen auf ein kanonisches Inhaltsmodell abbildet und auf Facebook,
-Instagram und Mastodon veröffentlicht. JMESPath bestimmt die Datenextraktion,
-Jinja2 die Darstellung. Kulturbytes ist die mitgelieferte Standardquelle.
+kulturbytes-social ist eine Open-Source-Python-CLI, die Inhalte aus generischen JSON APIs in Social-Media-Beiträge für Facebook, Instagram und Mastodon umwandelt.
 
-Du wählst Inhalte im Terminal aus, siehst eine Vorschau und bestätigst jeden
-Beitrag vor der Veröffentlichung. Veranstaltungen, Orte und Artikel verwenden
-denselben Ablauf mit eigener Quellenkonfiguration.
+Das Werkzeug richtet sich an Entwickler, Redaktionen und Veranstalter, die Artikel,
+Orte oder Veranstaltungen aus bestehenden Datenquellen veröffentlichen möchten.
+YAML definiert die Quellen, JMESPath bildet verschachtelte JSON-Felder auf das
+quellenunabhängige `ContentItem` ab, Pydantic validiert die Inhalte und Jinja2 rendert
+plattformgerechte Templates. Click stellt die CLI bereit, httpx übernimmt die
+HTTP-Anfragen; uv verwaltet den Python-Workspace. Quellengebundene Medienfreigaben
+und DNS-Pinning begrenzen lokale Bildabrufe. Automatisierte Tests, Ruff und CodeQL
+laufen in GitHub Actions.
 
-Wähle die Anleitung für deine Plattform:
+So unterstützt das Projekt Content Syndication und Social-Media-Automatisierung
+mit einer gemeinsamen Datenbasis: Du wählst Inhalte aus, prüfst die Vorschau und
+bestätigst jeden Beitrag. Unbeaufsichtigte Veröffentlichung per Timer ist nicht
+implementiert. Kulturbytes ist eine mitgelieferte YAML-Quelle, kein fest eingebauter
+Python-Spezialadapter.
 
-| Plattform | Wofür du sie verwendest |
-|---|---|
-| [Facebook](facebook/README.md) | Inhalte auf einer Facebook-Seite veröffentlichen |
-| [Mastodon](mastodon/README.md) | Inhalte auf einem Mastodon-Konto veröffentlichen |
-| [Instagram](instagram/README.md) | Bildbeiträge auf einem Instagram-Professional-Konto veröffentlichen |
+[![Tests: Python und Ruff](https://github.com/sndcds/kulturbytes-social/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/sndcds/kulturbytes-social/actions/workflows/tests.yml)
+[![CodeQL: Python-Analyse](https://github.com/sndcds/kulturbytes-social/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/sndcds/kulturbytes-social/actions/workflows/codeql.yml)
+
+## Orientierung
+
+- [Installation](#voraussetzungen) und [CLI-Schnellstart](#schnellstart)
+- [Zugangsdaten und Konfiguration](#konfiguration)
+- [Generische JSON-Quellen](#data-sources) und [JMESPath-Mapping](#sourcedefinition-und-json-source-mapping)
+- [Jinja2-Templates](#jinja2-templates) und [Pluto-Bildverarbeitung](#pluto-bildverarbeitung)
+- [Sicherheitsmodell](#schutz-bei-api--medien--und-veröffentlichungsfehlern) und [Wiederherstellung](#veröffentlichungsjournal-und-wiederherstellung)
+- [Entwicklung](#entwicklung), [Tests](#tests-ausführen) und [GitHub Actions / CodeQL](#continuous-integration)
+
+## Unterstützte Plattformen
+
+| Plattform | Beiträge | Bilder | Authentifizierung |
+|---|---|---|---|
+| [Facebook](facebook/README.md) | Text auf Facebook Pages | Ein Fotobeitrag | Meta System User Access Token; intern abgeleiteter Page Token |
+| [Instagram](instagram/README.md) | Bildunterschrift im Professional-Konto | Ein öffentlich abrufbares JPEG im Feed | Meta System User Access Token, bevorzugt Facebook Login |
+| [Mastodon](mastodon/README.md) | Öffentlicher Status mit Instanzlimit | Ein Bild mit Alt-Text oder nur Text | Access Token der Mastodon-Instanz |
+
+Die Publisher verwenden die Meta Graph API bzw. die Mastodon API. Details zu
+Voraussetzungen, Legacy-Zugängen und Grenzen stehen in den Plattformanleitungen.
+
+## Architektur: von JSON zu Social Media
+
+```text
+JSON API + YAML-SourceDefinition
+  → Listen-/Detailabruf mit httpx
+  → JMESPath-Mapping
+  → ContentItem mit Pydantic-Validierung
+  → Jinja2-Template → RenderedPost
+  → Facebook / Instagram / Mastodon
+```
+
+[`kulturbytes-common`](common/README.md) stellt Quellenkonfiguration, Mapping,
+Templates, Medienabrufe und den Veröffentlichungsworkflow bereit. Die
+Plattform-Publisher übernehmen Authentifizierung und plattformspezifische
+API-Aufrufe. Ein SQLite-Journal reserviert Veröffentlichungsversuche und hält
+unklare Remote-Ergebnisse für die manuelle Wiederherstellung fest.
 
 ## Voraussetzungen
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
 Für Veröffentlichungen und den Zugangstest benötigst du außerdem die in der
-jeweiligen Anleitung beschriebenen Zugangsdaten. Vorschau und Hilfe funktionieren ohne Tokens. Behalte den gesamten Repository-Ordner, da alle
-Publisher das Paket in `common/` verwenden.
+jeweiligen Anleitung beschriebenen Zugangsdaten. Vorschau und Hilfe funktionieren
+ohne Tokens. Für die folgende Entwicklungsinstallation bleibt der gesamte Checkout erhalten;
+uv bindet die gemeinsamen Workspace-Pakete lokal ein.
 
 ## Schnellstart
+
+Nach Installation von Python und uv, im gewünschten Arbeitsverzeichnis:
+
+```bash
+git clone https://github.com/sndcds/kulturbytes-social.git
+cd kulturbytes-social
+uv sync --all-packages --locked
+```
 
 Es gibt genau einen öffentlichen CLI-Befehl: `kulturbytes-social`.
 Die Plattformen werden als Click-Unterbefehle registriert:
@@ -37,12 +86,14 @@ uv run kulturbytes-social mastodon --help
 uv run kulturbytes-social instagram --help
 ```
 
-
-Öffne ein Terminal im Repository-Hauptordner und installiere die Abhängigkeiten:
+Eine erste Vorschau über den generischen Publishing-Befehl:
 
 ```bash
-uv sync --all-packages
+uv run kulturbytes-social publish --platform mastodon --source kulturbytes --limit 5
 ```
+
+Dieser Dry Run lädt Quelldaten und das öffentliche Mastodon-Instanzlimit,
+veröffentlicht aber nichts und benötigt keinen Social-Token.
 
 Öffne danach die [Facebook-Anleitung](facebook/README.md#schnellstart),
 [Mastodon-Anleitung](mastodon/README.md#schnellstart) oder
@@ -182,7 +233,7 @@ Keyring ist optional; Environment-Zugang funktioniert ohne Desktop-Sitzung.
 Unter Ubuntu kann eine entsperrte Secret-Service-Sitzung nötig sein, beispielsweise
 mit `gnome-keyring` und `libsecret-tools`. Unterstützt werden Secret Service,
 KWallet, macOS Keychain und Windows Credential Manager; Klartext-Dateibackends werden
-abgewiesen. `uv sync --all-packages` installiert die Python-Abhängigkeit. Tokens
+abgewiesen. `uv sync --all-packages --locked` installiert die Python-Abhängigkeit. Tokens
 werden nie ausgegeben oder in SQLite/Logs gespeichert. Nur erfolgreich validierte
 primäre Meta-Zugänge werden automatisch in der geschützten `.env` persistiert.
 
@@ -319,7 +370,14 @@ stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
 und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; siehe
 [Instagram](instagram/README.md#bild-und-beitragstext).
 
-## Data Sources
+<a id="data-sources"></a>
+
+## Generische JSON-Quellen
+
+Eine generische JSON-Quelle (generic JSON source) darf andere Eigenschaftsnamen
+und verschachtelte Strukturen verwenden: etwa `headline` statt `title` oder
+`building.name` für den Ort. YAML-SourceDefinitions und JMESPath übernehmen
+diese Zuordnung, ohne plattformspezifischen Python-Code zu ergänzen.
 
 Der Ablauf im Kern ist quellenunabhängig:
 
@@ -1105,7 +1163,7 @@ Die alten Plattform-Executables und `main.py`-Wrapper sind entfernt:
 
 Auch die bisherigen Executables `kulturbytes-facebook`, `kulturbytes-mastodon`
 und `kulturbytes-instagram` werden durch `kulturbytes-social PLATFORM` ersetzt.
-Führe nach dem Update `uv sync --all-packages` aus.
+Führe nach dem Update `uv sync --all-packages --locked` aus.
 
 Die bisherigen Standarddatenbanken in den Plattformordnern werden weiterbenutzt.
 Falls du bisher einen anderen Pfad oder ein anderes Arbeitsverzeichnis genutzt hast,
@@ -1121,14 +1179,16 @@ Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennun
 |---|---|
 | `uv` wird nicht gefunden | Prüfe, ob `uv` installiert und im Suchpfad deines Terminals verfügbar ist. |
 | Beim Start fehlt eine Umgebungsvariable | Setze die Zugangsdaten im selben Terminal, in dem du den Publisher startest. |
-| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages` im Repository-Hauptordner aus und behalte das Root-Paket unter `src/` und alle vier internen Paketordner. |
+| Ein lokales Python-Paket wird nicht gefunden | Führe `uv sync --all-packages --locked` im Repository-Hauptordner aus und behalte das Root-Paket unter `src/` und alle vier internen Paketordner. |
 | Es stehen keine Termine zur Auswahl | Prüfe Stadtfilter und bereits veröffentlichte Termine. |
 | Die Veröffentlichung schlägt fehl | Lies die API-Fehlermeldung und die Hinweise für deine Plattform. |
 
 Weitere Hilfe findest du bei [Facebook](facebook/README.md#hilfe-bei-problemen)
 und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
 
-## Continuous Integration
+<a id="continuous-integration"></a>
+
+## GitHub Actions: Tests, Ruff und CodeQL
 
 [Tests](.github/workflows/tests.yml) und [CodeQL](.github/workflows/codeql.yml)
 laufen bei Pushes auf `main` und Pull Requests gegen `main`. Die Tests verwenden
@@ -1150,8 +1210,8 @@ Lokale Entsprechung:
 ```bash
 uv sync --all-packages --locked
 uv run --all-packages --locked python -m unittest discover -s tests -v
-uv run --locked ruff format --check .
-uv run --locked ruff check .
+uv run --all-packages --locked ruff format --check .
+uv run --all-packages --locked ruff check .
 git diff --check
 ```
 
@@ -1201,10 +1261,15 @@ tests/test_instagram.py
 ```
 
 Die Plattformpakete enthalten Konfiguration, Vorschau, Bestätigung und API-Aufrufe.
-Textkomposition, Mapping und gemeinsame Speicherung liegen in `common/`. Führe die gemeinsamen Tests im Repository-Hauptordner aus:
+Textkomposition, Mapping und gemeinsame Speicherung liegen in
+[`kulturbytes-common`](common/README.md).
+
+### Tests ausführen
+
+Führe die gemeinsamen Tests im Repository-Hauptordner aus:
 
 ```bash
-uv run --all-packages python -m unittest discover -s tests -v
+uv run --all-packages --locked python -m unittest discover -s tests -v
 ```
 
 Die Tests verwenden simulierte HTTP-Antworten, DNS, Schlafzeiten und temporäre Datenbanken.
@@ -1218,4 +1283,4 @@ Checkouts.
 
 ## Lizenz
 
-[AGPL-3.0](LICENSE)
+Open Source unter der [GNU Affero General Public License 3.0 (AGPL-3.0)](LICENSE).

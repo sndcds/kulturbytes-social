@@ -1,17 +1,34 @@
-# Kulturbytes Instagram Publisher
+# kulturbytes-instagram
 
-Veröffentliche Kulturbytes-Termine als Instagram-Bildbeiträge. Du wählst einen
-Termin aus, prüfst Bildadresse und Text und bestätigst die Veröffentlichung.
-Die Vorschau funktioniert ohne Instagram-Zugangsdaten.
+`kulturbytes-instagram` ist der Instagram-Publisher für `kulturbytes-social`,
+eine Open-Source-Python-CLI für Content Publishing aus generischen JSON APIs.
+Das Paket richtet sich an Entwickler und Redaktionen mit Instagram-Professional-Konten
+und veröffentlicht einzelne Feed-Bilder mit Bildunterschrift über die Meta Graph API.
+Kulturbytes-Termine sind die Standardquelle; eigene Inhalte werden ebenfalls auf
+das gemeinsame Inhaltsmodell abgebildet.
+
+Du prüfst Bildadresse und Text und bestätigst jeden Beitrag. Die Vorschau
+funktioniert ohne Instagram-Zugangsdaten.
 
 [Projektübersicht](../README.md) · [Facebook](../facebook/README.md) · [Mastodon](../mastodon/README.md)
 
+## Rolle im Python-Workspace
+
+Das Paket ist ein Plattform-Publisher, kein eigenständiges CLI-Programm.
+Der einzige öffentliche Einstieg ist `kulturbytes-social instagram` bzw.
+`kulturbytes-social publish --platform instagram`. Click stellt die Befehle bereit,
+httpx führt die HTTP-Anfragen aus. [`kulturbytes-common`](../common/README.md)
+übernimmt YAML-SourceDefinitions, JMESPath-Mapping auf `ContentItem`,
+Pydantic-Validierung und Jinja2-Templates für `RenderedPost` sowie Medienrichtlinien,
+Duplikatschutz und Veröffentlichungsjournal. Der Publisher liest keine rohen JSON-Felder.
+
 ## Schnellstart
 
-Im Repository-Hauptordner:
+Voraussetzungen: Python 3.12 oder neuer und uv. Klone zunächst das Repository
+wie in der [Installationsanleitung](../README.md#schnellstart), dann im Repository-Hauptordner:
 
 ```bash
-uv sync --all-packages
+uv sync --all-packages --locked
 uv run kulturbytes-social instagram --dry-run --limit 10
 ```
 
@@ -134,7 +151,6 @@ vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgeg
 Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
-Die Paketbefehle akzeptieren dieselben Optionen.
 
 Standard und `--credential meta`: Service `kulturbytes-social/meta`, Benutzername
 `system-user-access-token`, gemeinsam mit Facebook. Löschen betrifft beide Publisher.
@@ -144,7 +160,7 @@ Meta-Kontokonfiguration wird aus `.env` vor Umgebungsvariablen gelesen.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
-`keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
+`keyring` wird über `uv sync --all-packages --locked` installiert; die Anwendung ruft kein
 `secret-tool` auf und akzeptiert keine Klartext-Keyring-Backends. Die primäre `.env`
 wird separat mit restriktiven Dateirechten verwaltet. Backend-Fehler werden
 als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
@@ -204,11 +220,15 @@ Der einzige öffentliche CLI-Befehl ist `kulturbytes-social` mit dem Unterbefehl
 
 ## Bild und Beitragstext
 
-Verwendet wird das Hauptbild aus `images.main.url` der Detailantwort.
+Verwendet wird die gerenderte `image_url`. Die Kulturbytes-Quellenkonfiguration
+mappt dafür `images.main.url` der Detailantwort auf das kanonische Inhaltsmodell.
 Instagram benötigt für diesen Ablauf ein öffentlich erreichbares JPEG. Ohne Bild
 oder bei einem anderen Format wird der Termin mit einer Fehlermeldung abgebrochen.
 Eine lokale Konvertierung allein genügt nicht: Meta lädt das Bild selbst über die
-öffentliche URL. Das Tool verändert und hostet keine Bilder. Die lokale Prüfung
+öffentliche URL. Quellen können über `media.image` eine
+[Pluto-Bildtransformation](../README.md#pluto-bildverarbeitung) anfordern;
+der Publisher verändert dafür URL-Parameter, konvertiert und hostet aber keine
+Bilder lokal. Für Instagram muss die öffentliche Ziel-URL JPEG liefern. Die lokale Prüfung
 erkennt die JPEG-Signatur; weitere Bildvorgaben und die Erreichbarkeit von Metas
 Servern prüft die Instagram-API. Unterstützt werden einzelne Feed-Bildbeiträge.
 Reels, Stories, Carousels und Alt-Text-Übertragung sind nicht implementiert.
@@ -248,23 +268,25 @@ Scheitert die abschließende Anfrage durch einen Verbindungsabbruch, kann der Be
 remote trotzdem entstanden sein. Der ungeklärte Versuch bleibt gesperrt; prüfe das Konto und löse ihn ausdrücklich auf.
 Das Tool wiederholt Veröffentlichungsanfragen nicht automatisch.
 
-## Tests
+## Entwicklung und Tests
 
+Der Plattformcode liegt in [`src/kulturbytes_instagram/cli.py`](src/kulturbytes_instagram/cli.py).
+Die gemeinsamen Dienste beschreibt [`kulturbytes-common`](../common/README.md).
 Im Repository-Hauptordner:
 
 ```bash
-uv run --all-packages python -m unittest discover -s tests -v
+uv sync --all-packages --locked
+uv run --all-packages --locked python -m unittest discover -s tests -v
+uv run --all-packages --locked ruff format --check .
+uv run --all-packages --locked ruff check .
 ```
 
 Die Instagram-Tests verwenden simulierte HTTP-Antworten und temporäre Datenbanken.
-Sie veröffentlichen keine echten Beiträge.
+Sie veröffentlichen keine echten Beiträge. [GitHub Actions und CodeQL](../README.md#continuous-integration)
+prüfen Python 3.12/3.13, Ruff und Security-and-Quality-Queries.
 
 Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 [Migration und Datenbankpfade](../README.md#migration).
-
-## Lizenz
-
-[AGPL-3.0](../LICENSE)
 
 ## Gemeinsame Schutzmechanismen
 
@@ -299,7 +321,7 @@ beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
 `--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
 der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.
 
-## Konfigurierbare Quellen und Templates
+## Generische JSON-Quellen und Jinja2-Templates
 
 Mit `kulturbytes-social publish --platform instagram --source NAME` oder dem bisherigen
 Plattformbefehl mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
@@ -310,3 +332,7 @@ Textkomposition erfolgt zentral über Jinja2, mit optionalen Overrides unter
 bleiben erhalten. Einrichtung, kanonische Felder, stabile IDs, installierte
 Konfigurationspfade und vollständige Beispiele stehen im
 [Quellenleitfaden](../README.md#data-sources).
+
+## Lizenz
+
+Open Source unter der [GNU Affero General Public License 3.0 (AGPL-3.0)](../LICENSE).

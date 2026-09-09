@@ -1090,6 +1090,40 @@ Zusammenführung von Veröffentlichungshistorien. So bleibt die Duplikaterkennun
 Weitere Hilfe findest du bei [Facebook](facebook/README.md#hilfe-bei-problemen)
 und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
 
+## Continuous Integration
+
+[Tests](.github/workflows/tests.yml) und [CodeQL](.github/workflows/codeql.yml)
+laufen bei Pushes auf `main` und Pull Requests gegen `main`. Die Tests verwenden
+Python 3.12, den eingefrorenen uv-Lockfile und den vollständigen Unittest-Lauf.
+Nur uv-Abhängigkeiten werden gecacht; Social-Zugangsdaten sind nicht erforderlich.
+
+Die [offizielle CodeQL Action](https://github.com/github/codeql-action) analysiert
+Python im gesamten Repository einschließlich aller Workspace-Pakete und Tests,
+ohne Build-Schritt, mit `security-and-quality`-Queries. Ergebnisse erscheinen in
+GitHub Code Scanning. Zusätzlich läuft die Analyse montags um 05:23 UTC.
+Fork-PRs verwenden den regulären `pull_request`-Trigger ohne privilegierten
+`pull_request_target`-Workflow. Verbindliche Merge-Sperren werden separat in den
+Branch-Regeln von GitHub konfiguriert.
+
+Lokale Entsprechung:
+
+```bash
+uv sync --all-packages --frozen
+uv run --all-packages --frozen python -m unittest discover -s tests -v
+git diff --check
+```
+
+Optional mit lokal installierter CodeQL CLI und Python-Query-Pack:
+
+```bash
+codeql database create .codeql-db --language=python --build-mode=none --source-root=.
+codeql database analyze .codeql-db codeql/python-queries:codeql-suites/python-security-and-quality.qls --format=sarif-latest --output=codeql-python-security.sarif
+```
+
+Lokale CodeQL-Datenbanken und SARIF-Berichte sind ignorierte Arbeitsartefakte und
+werden nicht eingecheckt. Die Workflows verwenden minimale Token-Berechtigungen,
+Job-Timeouts und brechen überholte Läufe desselben Branches/PRs ab.
+
 ## Entwicklung
 
 Die Root-CLI unter `src/kulturbytes_social/cli.py` registriert nur Befehle.

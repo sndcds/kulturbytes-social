@@ -1210,6 +1210,17 @@ Before changing behavior, inspect the existing implementation rather than rewrit
 
 ---
 
+## Continuous integration
+
+- Every PR must pass the full unittest suite; workflows run on PRs targeting main and pushes to main.
+- CodeQL scans Python with security-and-quality queries. Do not suppress findings without justification.
+- Workflows and tests must not require live social credentials or call live publication endpoints.
+- GitHub Actions must use least-privilege permissions and official, version-pinned actions.
+- Cache only dependencies, never secrets, `.env`, publication state, databases or SARIF output.
+- Do not commit CodeQL database or SARIF artifacts.
+
+---
+
 ## Testing expectations
 
 For publishing behavior changes, manually inspect dry-run output. Documentation-only edits require checking statements and commands against the code; they do not require live publishing.

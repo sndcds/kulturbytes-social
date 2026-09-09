@@ -1,6 +1,5 @@
 """No live Meta calls or OS keyring access."""
 import os
-import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
 from unittest.mock import patch
 

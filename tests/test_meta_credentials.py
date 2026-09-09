@@ -2,7 +2,6 @@
 import os
 import sqlite3
 import tempfile
-import unittest
 from dotenv_support import IsolatedEnvironmentTestCase
 from pathlib import Path
 from unittest.mock import patch

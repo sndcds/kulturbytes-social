@@ -47,7 +47,9 @@ class DatabasePathTests(IsolatedEnvironmentTestCase):
 
     def test_legacy_dotenv_fallback_warns_only_once_and_specific_key_wins(self):
         environment.get_env_file_path().write_text('DATABASE_PATH=/tmp/legacy-state.db\n')
-        with patch.dict(os.environ, {}, clear=True), patch.object(database, '_warned_legacy', False), patch('click.echo') as echo:
+        database._warn_legacy_database_path.cache_clear()
+        self.addCleanup(database._warn_legacy_database_path.cache_clear)
+        with patch.dict(os.environ, {}, clear=True), patch('click.echo') as echo:
             for platform in database.PLATFORM_COLUMNS:
                 self.assertEqual(database.get_database_path(platform), Path('/tmp/legacy-state.db'))
             echo.assert_called_once()

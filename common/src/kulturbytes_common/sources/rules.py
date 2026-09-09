@@ -9,9 +9,10 @@ from urllib.parse import quote
 
 import jmespath
 from jmespath import functions
+from jmespath.exceptions import JMESPathError
 from jmespath.parser import ParsedResult
 
-from .errors import SourceConfigurationError, SourceValidationError
+from .errors import SourceConfigurationError, SourceMappingError, SourceValidationError
 from .models import ContentItem
 
 
@@ -49,6 +50,15 @@ class MappingFunctions(functions.Functions):
 OPTIONS = jmespath.Options(custom_functions=MappingFunctions())
 
 
+def evaluate(name: str, field: str, expression: ParsedResult, raw: object):
+    try:
+        return expression.search(raw, options=OPTIONS)
+    except (JMESPathError, ValueError, TypeError, OverflowError):
+        raise SourceMappingError(
+            f"Quelle {name}: Mapping für {field} fehlgeschlagen."
+        ) from None
+
+
 def finite_number(value: object) -> bool:
     try:
         return type(value) in (int, float) and math.isfinite(value)
@@ -72,8 +82,6 @@ class Assertion:
     required: bool = False
 
     def validate(self, name: str, raw: dict) -> None:
-        from .mapping import evaluate
-
         value = evaluate(name, self.label, self.expression, raw)
         valid = True
         if value is None or (

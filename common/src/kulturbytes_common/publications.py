@@ -10,7 +10,7 @@ import sqlite3
 from uuid import uuid4
 
 import click
-from .legacy_storage import record_for
+from .publication_records import record_for
 from .sources.models import ContentItem
 
 ACTIVE = ('reserved', 'publishing', 'remote_succeeded')

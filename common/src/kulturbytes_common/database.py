@@ -1,14 +1,20 @@
 import os
 import sqlite3
 from pathlib import Path
+from functools import cache
 
 import click
 from .environment import get_config
 
-_warned_legacy = False
 PLATFORM_COLUMNS = {
     "facebook": "facebook_post_id", "instagram": "instagram_media_id", "mastodon": "mastodon_status_id",
 }
+
+
+@cache
+def _warn_legacy_database_path() -> None:
+    """Emit the deprecated fallback warning once per process, across platforms."""
+    click.echo('DATABASE_PATH ist veraltet; verwende separate <PLATFORM>_DATABASE_PATH-Werte.', err=True)
 
 
 def already_published(conn: sqlite3.Connection, date_uuid: str) -> bool:
@@ -29,13 +35,11 @@ def get_database_path(platform: str) -> Path:
         if not data_home.is_absolute():
             data_home = Path.home() / ".local/share"
         directory = data_home / "kulturbytes-social"
-    global _warned_legacy
     configured = get_config(f'{platform.upper()}_DATABASE_PATH')
     if not configured:
         configured = get_config('DATABASE_PATH')
-        if configured and not _warned_legacy:
-            click.echo('DATABASE_PATH ist veraltet; verwende separate <PLATFORM>_DATABASE_PATH-Werte.', err=True)
-            _warned_legacy = True
+        if configured:
+            _warn_legacy_database_path()
     path = Path(configured).expanduser() if configured else Path(f"{platform}_posts.sqlite3")
     return path if path.is_absolute() else directory / path
 

@@ -1,19 +1,9 @@
-from jmespath.exceptions import JMESPathError
 from jmespath.parser import ParsedResult
 from pydantic import ValidationError
 
 from .errors import SourceMappingError, SourceValidationError
 from .models import ContentItem
-from .rules import OPTIONS
-
-
-def evaluate(name: str, field: str, expression: ParsedResult, raw: object):
-    try:
-        return expression.search(raw, options=OPTIONS)
-    except (JMESPathError, ValueError, TypeError, OverflowError):
-        raise SourceMappingError(
-            f"Quelle {name}: Mapping für {field} fehlgeschlagen."
-        ) from None
+from .rules import evaluate
 
 
 def map_item(

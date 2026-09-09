@@ -6,8 +6,8 @@ from jmespath.exceptions import JMESPathError
 
 from ..http import safe_get
 from ..network import PinnedTransport
+from .definitions import RequestDefinition
 from .errors import SourceFetchError, SourceMappingError
-from .loader import RequestDefinition
 
 
 def source_client() -> httpx.Client:

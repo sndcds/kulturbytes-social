@@ -1,34 +1,33 @@
 """Strict local source definitions; parsing never performs HTTP or credential lookup."""
 
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import jmespath
 import yaml
 from jmespath.exceptions import JMESPathError
 from jmespath.parser import ParsedResult
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
 from ..network import MediaPolicy, MediaPolicyError, https_url
+from .definitions import (
+    PLACEHOLDER,
+    RequestDefinition,
+    SourceBehavior,
+    SourceDefinition,
+)
 from .errors import SourceConfigurationError, SourceNotFound
 from .models import ContentItem
 from .paths import config_roots
-from .rules import Assertion, compile_assertions
+from .rules import compile_assertions
 
 if TYPE_CHECKING:
     from . import SourceAdapter
 
 NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 SAFE_HEADERS = frozenset({"accept", "user-agent", "x-api-version"})
-PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
-
-
-class SourceBehavior(BaseModel):
-    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
-    skip_past: bool = False
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -48,68 +47,6 @@ def unique_mapping(loader, node, deep=False):
 UniqueLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping
 )
-
-
-@dataclass(frozen=True)
-class RequestDefinition:
-    url: str
-    root: ParsedResult
-    mode: str = "collection"
-    method: str = "GET"
-    headers: dict[str, str] = field(default_factory=dict)
-    query: dict[str, str] = field(default_factory=dict)
-    fields: dict[str, ParsedResult] | None = None
-    placeholders: dict[str, ParsedResult] = field(default_factory=dict)
-
-    assertions: tuple[Assertion, ...] = ()
-    identity_checks: tuple[tuple[ParsedResult, ParsedResult], ...] = ()
-    allow_duplicate_ids: bool = False
-
-    def item_url(
-        self,
-        item_id: str | None = None,
-        *,
-        context: dict | None = None,
-        source_name: str = "JSON",
-    ) -> str:
-        # One opaque path segment; no format(), Jinja, query or origin substitution.
-        from .mapping import evaluate
-
-        values = (
-            {
-                key: evaluate(source_name, key, expr, context)
-                for key, expr in self.placeholders.items()
-            }
-            if self.placeholders
-            else {"id": item_id}
-        )
-        for key, value in values.items():
-            if not isinstance(value, str) or not value.strip() or value in (".", ".."):
-                raise SourceConfigurationError(
-                    f"Quelle {source_name}: ungültiger Detail-Platzhalter {key}."
-                )
-        return PLACEHOLDER.sub(lambda match: quote(values[match[1]], safe=""), self.url)
-
-
-@dataclass(frozen=True)
-class SourceDefinition:
-    name: str
-    adapter: str
-    listing: RequestDefinition
-    detail: RequestDefinition | None
-    fields: dict[str, ParsedResult]
-    media: MediaPolicy
-    behavior: SourceBehavior
-
-    identity: dict[str, ParsedResult] = field(default_factory=dict)
-    selectors: dict[str, tuple[ParsedResult, ...]] = field(default_factory=dict)
-    filters: tuple[tuple[ParsedResult, str, object], ...] = ()
-    derived: dict[str, tuple[str | ParsedResult, ...]] = field(default_factory=dict)
-    skip_invalid: bool = False
-
-    @property
-    def root(self):
-        return self.listing.root if self.listing else None
 
 
 def mapping(name: str, fields: object) -> dict[str, ParsedResult]:
@@ -448,3 +385,13 @@ def load_source(name: str) -> "SourceAdapter":
     if definition is None:
         raise SourceNotFound(f"Quelle {name} nicht gefunden.")
     return ADAPTERS[definition.adapter](definition)
+
+
+__all__ = [
+    "RequestDefinition",
+    "SourceBehavior",
+    "SourceDefinition",
+    "definitions",
+    "load_definition",
+    "load_source",
+]

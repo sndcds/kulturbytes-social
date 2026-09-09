@@ -5,12 +5,12 @@ from dataclasses import dataclass
 import click
 import httpx
 
+from .definitions import RequestDefinition, SourceDefinition
 from .errors import SourceNotFound, SourceValidationError
 from .fetching import fetch
-from .loader import RequestDefinition, SourceDefinition
-from .mapping import evaluate, map_item
+from .mapping import map_item
 from .models import ContentItem, PublicationIdentity, SourceContext
-from .rules import finite_number, safe_identity
+from .rules import evaluate, finite_number, safe_identity
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@ from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
 from functools import partial
 from kulturbytes_common import storage
 from kulturbytes_common.sources.models import ContentItem, RenderedPost
-from kulturbytes_common.rendering import render_post, trim_summary as trim_summary
+from kulturbytes_common.rendering import render_post
 from kulturbytes_common.media import download_post_image as download_image
 
 import sqlite3
@@ -88,6 +88,7 @@ def get_status_limit(client: httpx.Client, base_url: str) -> int:
         if type(value) is int and value > 0:
             return value
     except (httpx.HTTPError, ValueError, click.ClickException):
+        # Optional instance metadata falls back to the documented limit below.
         pass
     click.echo("Mastodon-Instanzlimit nicht verfügbar; verwende 500 Zeichen.", err=True)
     return DEFAULT_STATUS_LIMIT

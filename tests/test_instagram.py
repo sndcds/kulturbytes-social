@@ -85,7 +85,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
                 self.assertEqual(request.method, 'POST')
                 self.assertEqual(parse_qs(request.content.decode()), {'creation_id': ['456']})
                 return httpx.Response(200, json={'id': '789'})
-            self.fail(f'Unexpected request: {request.method} {path}')
+            raise AssertionError(f'Unexpected request: {request.method} {path}')
 
         client_class = httpx.Client
         def make_client(**kwargs):

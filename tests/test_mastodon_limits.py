@@ -1,3 +1,4 @@
+from kulturbytes_common.rendering import trim_summary
 from canonical_support import canonical
 import os
 import sqlite3
@@ -65,9 +66,9 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
                 summary = message.split('\n\n')[1]
                 self.assertTrue(summary.endswith('…'))
                 self.assertIn(summary[:-1].split()[-1], event['summary'].split())
-        self.assertEqual(mastodon.trim_summary('abcdefghijk', 5), '')
-        self.assertEqual(mastodon.trim_summary('Hallo Welt', 6), 'Hallo…')
-        self.assertEqual(mastodon.trim_summary('Hallo\nWelt', 10), 'Hallo\nWelt')
+        self.assertEqual(trim_summary('abcdefghijk', 5), '')
+        self.assertEqual(trim_summary('Hallo Welt', 6), 'Hallo…')
+        self.assertEqual(trim_summary('Hallo\nWelt', 10), 'Hallo\nWelt')
 
     def test_optional_metadata_dropped_whole_in_priority_order(self):
         event = deepcopy(EVENT)

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -160,7 +161,7 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 )
                 self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(len(received), 2)
-        with sqlite3.connect(self.root / "facebook.db") as conn:
+        with closing(sqlite3.connect(self.root / "facebook.db")) as conn, conn:
             self.assertEqual(
                 set(
                     row[0]
@@ -185,7 +186,10 @@ class GenericCLITests(IsolatedEnvironmentTestCase):
                 self.assertEqual(
                     result.exit_code, 0, result.output + str(result.exception)
                 )
-                with sqlite3.connect(self.root / f"{platform}.db") as conn:
+                with (
+                    closing(sqlite3.connect(self.root / f"{platform}.db")) as conn,
+                    conn,
+                ):
                     row = conn.execute(
                         f"SELECT date_uuid, {column} FROM published_events"
                     ).fetchone()

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -251,7 +252,7 @@ class MastodonEnvironmentTests(IsolatedEnvironmentTestCase):
             )
             self.assertEqual(result.exit_code, 0, result.output + str(result.exception))
             self.assertEqual(config.call_count, 1 if publish else 0)
-            with sqlite3.connect(Path(directory) / "posts.sqlite3") as db:
+            with closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as db, db:
                 self.assertEqual(
                     db.execute("SELECT COUNT(*) FROM published_events").fetchone(),
                     (1 if publish else 0,),

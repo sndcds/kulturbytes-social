@@ -2,6 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
@@ -196,7 +197,10 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
                         f"Zeichen: {len(message)}/{limit or 500}", result.output
                     )
                     self.assertLessEqual(len(message), limit or 500)
-                with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+                with (
+                    closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                    conn,
+                ):
                     self.assertEqual(
                         conn.execute(
                             "SELECT COUNT(*) FROM published_events"
@@ -233,7 +237,10 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
             self.assertIn("/750", result.output)
             self.assertEqual(sum(r.url.path == "/api/v2/instance" for r in requests), 1)
             self.assertTrue(all(r.method == "GET" for r in requests))
-            with sqlite3.connect(Path(directory) / "posts.sqlite3") as conn:
+            with (
+                closing(sqlite3.connect(Path(directory) / "posts.sqlite3")) as conn,
+                conn,
+            ):
                 self.assertEqual(
                     conn.execute("SELECT COUNT(*) FROM published_events").fetchone(),
                     (0,),
@@ -269,7 +276,7 @@ class MastodonLimitTests(IsolatedEnvironmentTestCase):
                 self.assertIn("Instanzlimit von 500 Zeichen", result.output)
                 self.assertFalse(any(r.method == "POST" for r in requests))
                 self.assertFalse(any(r.url.host == "example.test" for r in requests))
-                with sqlite3.connect(database) as conn:
+                with closing(sqlite3.connect(database)) as conn, conn:
                     self.assertEqual(
                         conn.execute("SELECT * FROM published_events").fetchall(),
                         before,

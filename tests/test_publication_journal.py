@@ -1,6 +1,7 @@
 import importlib
 import sqlite3
 import tempfile
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -45,7 +46,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
     def publish(self):
         begin_remote_mutation("facebook_feed")
         # Publishing intent is visible from another connection before the mutation.
-        with sqlite3.connect(self.db) as observer:
+        with closing(sqlite3.connect(self.db)) as observer, observer:
             self.assertEqual(list_attempts(observer)[0]["state"], "publishing")
         return "123", None
 
@@ -115,7 +116,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
             (attempt["state"], attempt["remote_id"]), ("remote_succeeded", "123")
         )
         self.assertFalse(already_published(self.conn, "date-1"))
-        with sqlite3.connect(self.db) as restart:
+        with closing(sqlite3.connect(self.db)) as restart, restart:
             with self.assertRaises(click.ClickException):
                 reserve_attempt(restart, "facebook", EVENT, allow_repeat=True)
         with self.assertRaises(click.ClickException):
@@ -150,7 +151,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
 
     def test_crash_reservation_requires_explicit_resolution(self):
         attempt = reserve_attempt(self.conn, "facebook", EVENT)
-        with sqlite3.connect(self.db) as restart:
+        with closing(sqlite3.connect(self.db)) as restart, restart:
             with self.assertRaises(click.ClickException):
                 reserve_attempt(restart, "facebook", EVENT)
             resolve_attempt(restart, attempt, "failed", Mock())
@@ -399,7 +400,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
     def test_additive_context_migration_preserves_old_attempts(self):
         from kulturbytes_common.publications import init_journal
 
-        with sqlite3.connect(":memory:") as legacy:
+        with closing(sqlite3.connect(":memory:")) as legacy, legacy:
             legacy.execute("""CREATE TABLE publication_attempts (
                 attempt_uuid TEXT PRIMARY KEY, platform TEXT, date_uuid TEXT, event_uuid TEXT,
                 state TEXT, remote_id TEXT, remote_url TEXT, error_class TEXT, event_snapshot TEXT,
@@ -534,7 +535,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                                 "status_code": "FINISHED",
                             },
                         )
-                    with sqlite3.connect(db) as observer:
+                    with closing(sqlite3.connect(db)) as observer, observer:
                         row = list_attempts(observer)[0]
                     stage = {
                         "/api/v2/media": "mastodon_media",

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import click
 
+from .atproto_identity import post_identity, valid_did
 from .publication_records import record_for
 from .sources.models import ContentItem
 
@@ -19,6 +20,8 @@ ACTIVE = ("reserved", "publishing", "remote_succeeded")
 STATES = (*ACTIVE, "published", "failed")
 MUTATION_STAGES = frozenset(
     {
+        "bluesky_blob",
+        "bluesky_post",
         "facebook_photo",
         "facebook_feed",
         "mastodon_media",
@@ -75,6 +78,10 @@ def validate_target_ref(platform: str, value: str | None) -> str | None:
         raise click.ClickException(
             "Ungültige Zielkennung für das Veröffentlichungsjournal."
         )
+    if platform == "bluesky":
+        if not valid_did(value):
+            raise click.ClickException("Bluesky-Journalziel benötigt eine gültige DID.")
+        return value
     if platform in ("facebook", "instagram"):
         if not re.fullmatch(r"[0-9]{1,100}", value):
             raise click.ClickException(
@@ -451,7 +458,15 @@ def resolve_attempt(
                 if attempt["platform"] == "facebook"
                 else r"[0-9]{1,100}"
             )
-            if not remote_id or not re.fullmatch(pattern, remote_id):
+            if attempt["platform"] == "bluesky":
+                identity = post_identity(remote_id)
+                if not identity or (
+                    attempt["target_ref"] and identity[0] != attempt["target_ref"]
+                ):
+                    raise click.ClickException(
+                        "Bluesky-Erfolg benötigt eine AT-Post-URI des gespeicherten Kontos."
+                    )
+            elif not remote_id or not re.fullmatch(pattern, remote_id):
                 raise click.ClickException(
                     "Für Remote-Erfolg ist --remote-id mit einer gültigen numerischen Post-ID erforderlich."
                 )

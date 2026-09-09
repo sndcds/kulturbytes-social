@@ -7,6 +7,7 @@ from .publication_records import record_for
 from .sources.models import ContentItem
 
 COLUMNS = {
+    "bluesky": "bluesky_post_uri",
     "facebook": "facebook_post_id",
     "instagram": "instagram_media_id",
     "mastodon": "mastodon_status_id",
@@ -22,7 +23,10 @@ def init_database(platform: str, override=None) -> sqlite3.Connection:
 
     column = COLUMNS[platform]
     conn = open_database(override or get_database_path(platform), platform)
-    extra = "mastodon_status_url TEXT," if platform == "mastodon" else ""
+    url_column = {"mastodon": "mastodon_status_url", "bluesky": "bluesky_post_url"}.get(
+        platform
+    )
+    extra = f"{url_column} TEXT," if url_column else ""
     conn.execute(f"""CREATE TABLE IF NOT EXISTS published_events (
         date_uuid TEXT PRIMARY KEY, event_uuid TEXT NOT NULL,
         {column} TEXT NOT NULL, {extra} title TEXT NOT NULL,
@@ -60,8 +64,11 @@ def remember_post(
         stamp["start_date"],
         stamp.get("start_time"),
     ]
-    if platform == "mastodon":
-        columns.append("mastodon_status_url")
+    url_column = {"mastodon": "mastodon_status_url", "bluesky": "bluesky_post_url"}.get(
+        platform
+    )
+    if url_column:
+        columns.append(url_column)
         values.append(remote_url)
     updates = ",".join(f"{column}=excluded.{column}" for column in columns[1:])
     conn.execute(

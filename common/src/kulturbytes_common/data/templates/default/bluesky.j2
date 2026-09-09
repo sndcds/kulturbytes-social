@@ -1,0 +1,19 @@
+{{ title }}
+{% if date %}
+{{ date | dateformat }}{{ ' · ' ~ time[:5] if time else '' }}
+{% endif %}
+{% if location or city %}
+{{ location or '' }}{{ ', ' if location and city else '' }}{{ city or '' }}
+{% endif %}
+{% if text %}
+
+{{ text }}
+{% endif %}
+{% if link %}
+
+{{ link }}
+{% endif %}
+{% set social_tags = tags | hashtags(city=city) %}
+{% if social_tags %}
+{{ social_tags }}
+{% endif %}

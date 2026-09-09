@@ -12,7 +12,7 @@ from kulturbytes_common.publications import (
     resolve_attempt,
 )
 
-PLATFORMS = click.Choice(["facebook", "instagram", "mastodon"])
+PLATFORMS = click.Choice(["facebook", "instagram", "mastodon", "bluesky"])
 
 
 @click.group("attempts")
@@ -64,7 +64,7 @@ def show_attempts(
     help="Bereits vorhandene Post-ID nach manueller Plattformprüfung.",
 )
 @click.option(
-    "--remote-url", default=None, help="Optionale vorhandene Mastodon-Status-URL."
+    "--remote-url", default=None, help="Optionale vorhandene öffentliche Post-URL."
 )
 def resolve(
     platform: str,
@@ -91,7 +91,7 @@ def resolve(
             return
 
         def finalize(event: dict, post_id: str, post_url: str | None) -> None:
-            if platform == "mastodon":
+            if platform in ("mastodon", "bluesky"):
                 module.remember_post(conn, event, post_id, post_url, commit=False)
             else:
                 module.remember_post(conn, event, post_id, commit=False)

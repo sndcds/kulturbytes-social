@@ -15,6 +15,7 @@ from kulturbytes_common.sources.models import ContentItem, RenderedPost
 from kulturbytes_common.sources.paths import config_roots
 
 from .image_urls import image_url
+from .text_limits import bluesky_text_fits, grapheme_words
 
 
 def hashtags(
@@ -88,6 +89,7 @@ class TemplateRenderer:
             "facebook",
             "instagram",
             "mastodon",
+            "bluesky",
         ):
             raise TemplateRenderingError("Ungültige Template-Auswahl.")
         for name in (source, "default"):
@@ -132,7 +134,7 @@ class TemplateRenderer:
         )
 
     def validate(self, source: str) -> None:
-        for platform in ("facebook", "instagram", "mastodon"):
+        for platform in ("facebook", "instagram", "mastodon", "bluesky"):
             self.template(source, platform)
 
     def render(
@@ -175,7 +177,28 @@ class TemplateRenderer:
             if platform == "mastodon"
             else None
         )
-        if limit is None:
+        if platform == "bluesky":
+            text = compose(values)
+            # Remove whole trailing words from the body only. URLs, hashtags and
+            # grapheme clusters are never sliced; fixed template fields stay intact.
+            words = grapheme_words(values.get("text") or "")[:301]
+            while words and not bluesky_text_fits(text):
+                words.pop()
+                text = compose(
+                    {**values, "text": " ".join(words) + "…" if words else None}
+                )
+            if not bluesky_text_fits(text):
+                raise TemplateRenderingError(
+                    "Bluesky: Titel/Metadaten überschreiten 300 Grapheme oder 3000 UTF-8-Bytes."
+                )
+            if item.link and item.link not in text:
+                raise TemplateRenderingError("Bluesky: Pflicht-Link fehlt im Template.")
+            required_tags = set(hashtags(values["tags"], city=values["city"]).split())
+            if not required_tags <= set(re.findall(r"(?<!\w)#[\w]+", text)):
+                raise TemplateRenderingError(
+                    "Bluesky: vollständige Hashtags fehlen im Template."
+                )
+        elif limit is None:
             text = compose(values)
         else:
             context = {**values, "text": None}

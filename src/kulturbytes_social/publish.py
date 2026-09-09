@@ -2,12 +2,14 @@
 
 import click
 
+from kulturbytes_bluesky import bluesky_command
 from kulturbytes_common.sources.cli import DEFAULT_SOURCE
 from kulturbytes_facebook import facebook_command
 from kulturbytes_instagram import instagram_command
 from kulturbytes_mastodon import mastodon_command
 
 PLATFORMS = {
+    "bluesky": bluesky_command,
     "facebook": facebook_command,
     "instagram": instagram_command,
     "mastodon": mastodon_command,

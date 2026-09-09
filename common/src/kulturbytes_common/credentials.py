@@ -56,7 +56,11 @@ MASTODON = Credential(
     "access-token",
     "Access Token",
 )
+BLUESKY = Credential(
+    "BLUESKY_APP_PASSWORD", "kulturbytes-social/bluesky", "app-password", "App Password"
+)
 PLATFORMS = {
+    "Bluesky": {"app-password": BLUESKY},
     "Facebook": {
         "meta": META_SYSTEM_USER,
         "page": FACEBOOK_PAGE,

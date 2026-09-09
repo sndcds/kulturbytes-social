@@ -1,0 +1,14 @@
+[project]
+name = "kulturbytes-bluesky"
+version = "0.1.0"
+description = "Bluesky XRPC publisher for canonical content"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["kulturbytes-common", "click>=8.5.0", "httpx>=0.28.1"]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+kulturbytes-common = { workspace = true }

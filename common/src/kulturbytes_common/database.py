@@ -8,6 +8,7 @@ import click
 from .environment import get_config
 
 PLATFORM_COLUMNS = {
+    "bluesky": "bluesky_post_uri",
     "facebook": "facebook_post_id",
     "instagram": "instagram_media_id",
     "mastodon": "mastodon_status_id",

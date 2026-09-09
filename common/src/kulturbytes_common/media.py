@@ -1,5 +1,6 @@
 """Source-neutral media downloads using private source policy."""
 
+import click
 import httpx
 
 from .image_urls import image_url
@@ -24,6 +25,7 @@ def download_post_image(
     post: ContentItem | RenderedPost,
     *,
     platform: str | None = None,
+    max_bytes: int | None = None,
 ) -> tuple[bytes, str, str]:
     if not post.image_url:
         raise ValueError("Inhalt besitzt kein Bild")
@@ -31,7 +33,18 @@ def download_post_image(
     if platform:
         url = post_image_url(post, platform)
     with media_response(client, url, post.media_policy) as response:
-        response.read()
+        if max_bytes is None:
+            response.read()
+            content = response.content
+        else:
+            content = bytearray()
+            for chunk in response.iter_bytes(chunk_size=65536):
+                if len(content) + len(chunk) > max_bytes:
+                    raise click.ClickException(
+                        f"Bild überschreitet das Upload-Limit von {max_bytes} Bytes."
+                    )
+                content.extend(chunk)
+            content = bytes(content)
     content_type = (
         response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
     )
@@ -43,4 +56,4 @@ def download_post_image(
         "image/webp": ".webp",
         "image/gif": ".gif",
     }.get(content_type, ".jpg")
-    return response.content, content_type, (post.image_name or "image") + extension
+    return content, content_type, (post.image_name or "image") + extension

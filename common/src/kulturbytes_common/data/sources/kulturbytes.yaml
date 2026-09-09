@@ -5,6 +5,17 @@ behavior:
 media:
   allowed_hosts:
   - api.kulturbytes.de
+  image:
+    ratio:
+      instagram: 4/5
+      facebook: 1200/630
+      mastodon: free
+    type:
+      instagram: jpg
+      facebook: webp
+      mastodon: jpg
+    max_width: 1920
+    max_height: 1920
 skip_invalid: true
 list:
   allow_duplicate_ids: true
@@ -151,6 +162,8 @@ fields:
   time: time_hm(detail.date.start_time || '00:00')
   end_date: detail.date.end_date
   image_url: detail.images.main.url || `null`
+  image_width: detail.images.main.width || `null`
+  image_height: detail.images.main.height || `null`
   image_alt: trim(detail.images.main.alt || join('', ['Veranstaltungsbild zu ', detail.title]))
   image_name: detail.images.main.uuid || list.date_uuid
   organizer: detail.org_name

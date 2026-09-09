@@ -319,7 +319,11 @@ class JournalTests(IsolatedEnvironmentTestCase):
                     event = deepcopy(EVENT)
                     if module is INSTAGRAM:
                         event["images"] = {
-                            "main": {"url": "https://api.kulturbytes.de/image.jpg"}
+                            "main": {
+                                "url": "https://api.kulturbytes.de/image.jpg",
+                                "width": 2400,
+                                "height": 1600,
+                            }
                         }
                     with (
                         httpx.Client(transport=httpx.MockTransport(respond)) as client,
@@ -511,7 +515,11 @@ class JournalTests(IsolatedEnvironmentTestCase):
                 event = deepcopy(EVENT)
                 if with_image:
                     event["images"] = {
-                        "main": {"url": "https://api.kulturbytes.de/image.jpg"}
+                        "main": {
+                            "url": "https://api.kulturbytes.de/image.jpg",
+                            "width": 2400,
+                            "height": 1600,
+                        }
                     }
                 stages = []
 
@@ -605,7 +613,13 @@ class JournalTests(IsolatedEnvironmentTestCase):
             "123", "test-secret", "https://example.test/v26.0"
         )
         event = deepcopy(EVENT)
-        event["images"] = {"main": {"url": "https://api.kulturbytes.de/image.jpg"}}
+        event["images"] = {
+            "main": {
+                "url": "https://api.kulturbytes.de/image.jpg",
+                "width": 2400,
+                "height": 1600,
+            }
+        }
         for failure in ("timeout", "reset", "503"):
             db = Path(self.directory.name) / f"instagram-final-{failure}.db"
             posts = []

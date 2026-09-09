@@ -180,6 +180,8 @@ class MastodonEnvironmentTests(IsolatedEnvironmentTestCase):
                 "main": {
                     "url": "https://api.kulturbytes.de/picture.jpg",
                     "alt": "Kulturabend im Saal",
+                    "width": 2400,
+                    "height": 1600,
                 }
             }
         calls = []

@@ -27,6 +27,7 @@ from kulturbytes_common.credentials import (
 )
 from kulturbytes_common.environment import ResolvedValue, get_config
 from kulturbytes_common.http import safe_get
+from kulturbytes_common.media import post_image_url
 from kulturbytes_common.media_security import media_response
 from kulturbytes_common.publications import begin_remote_mutation, execute_publication
 from kulturbytes_common.rendering import render_post
@@ -167,7 +168,7 @@ def require_id(payload: dict, token: str = "") -> str:
 
 
 def validate_image(client: httpx.Client, event: ContentItem) -> str:
-    image_url = event.image_url
+    image_url = post_image_url(event, "instagram")
     if not image_url:
         raise click.ClickException(
             "Instagram benötigt ein Hauptbild; ein Textbeitrag ist nicht möglich."
@@ -250,7 +251,7 @@ def publish_event(
     click.echo("\n" + "=" * 80)
     click.echo(caption)
     click.echo(f"\nZeichen: {len(caption)}/{CAPTION_LIMIT}")
-    click.echo(f"🖼 {event.image_url or 'Kein Hauptbild vorhanden'}")
+    click.echo(f"🖼 {post.image_url or 'Kein Hauptbild vorhanden'}")
     click.echo("=" * 80)
     image_url = validate_image(client, event)
     if dry_run:

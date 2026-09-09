@@ -1298,3 +1298,12 @@ For publishing changes, verify the applicable requirements below and identify re
 - secrets are not logged,
 - SQLite deduplication remains correct,
 - `uv sync --all-packages` and the existing test suite succeed.
+
+## Pluto image processing
+
+- `media.image` explicitly opts a source into Pluto URL parameters. Keep the core source-neutral.
+- Validate platform ratios/formats and positive bounded size limits. Convert slash ratios to Pluto colon syntax; free means no ratio parameter.
+- Use the limiting edge, never send independent width/height bounds that accidentally force a crop. Free ratio with both bounds requires canonical image_width/image_height metadata.
+- Transform RenderedPost image URLs and direct ContentItem media calls consistently; previews and Instagram validation/publication must use the transformed URL.
+- Instagram's bundled output format is jpg. Keep JPEG validation and public URL publishing. Pluto performs conversion remotely; do not add local conversion or hosting.
+- Preserve private source media policy, host validation, DNS pinning, no social credentials in media requests, and golden text fixtures.

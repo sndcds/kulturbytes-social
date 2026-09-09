@@ -14,6 +14,8 @@ from kulturbytes_common.sources.loader import NAME
 from kulturbytes_common.sources.models import ContentItem, RenderedPost
 from kulturbytes_common.sources.paths import config_roots
 
+from .image_urls import image_url
+
 
 def hashtags(
     values: list[str], *, city: str | None = None, priority=(), limit: int | None = None
@@ -241,7 +243,13 @@ class TemplateRenderer:
                 )
         post = RenderedPost(
             text=text,
-            image_url=item.image_url,
+            image_url=image_url(
+                item.image_url,
+                item.media_policy.image,
+                platform,
+                item.image_width,
+                item.image_height,
+            ),
             image_alt=item.image_alt or f"Bild zu {item.title}",
             image_name=item.image_name or "image",
         )

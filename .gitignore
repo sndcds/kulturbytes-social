@@ -17,6 +17,10 @@ dist/
 htmlcov/
 coverage.xml
 
+# Local CodeQL databases and analysis reports (no versioned SARIF fixtures)
+.codeql-db/
+*.sarif
+
 # uv / virtual environments
 .venv/
 venv/

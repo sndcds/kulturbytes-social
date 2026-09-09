@@ -1,18 +1,34 @@
-# Kulturbytes Mastodon Publisher
+# kulturbytes-mastodon
 
-Teile Kulturbytes-Veranstaltungen auf deinem Mastodon-Konto: Du wählst Termine
-im Terminal aus, prüfst die Vorschau und bestätigst die Veröffentlichung.
-Beim normalen Start bleibt es bei einer Vorschau.
+`kulturbytes-mastodon` ist der Mastodon-Publisher für `kulturbytes-social`,
+eine Open-Source-Python-CLI für Social Media Publishing aus generischen JSON APIs.
+Entwickler, Redaktionen und Veranstalter veröffentlichen damit öffentliche
+Text- oder Bildbeiträge über die Mastodon API im Fediverse. Der Publisher
+berücksichtigt das Statuslimit der Zielinstanz; Standard ist `https://norden.social`.
 
-[Projektübersicht](../README.md) · [Facebook](../facebook/README.md) · [Mastodon](../mastodon/README.md)
+Kulturbytes ist die voreingestellte Quelle. Eigene JSON-Quellen nutzen dieselbe
+Vorschau und Einzelbestätigung; beim normalen Start wird nichts veröffentlicht.
+
+[Projektübersicht](../README.md) · [Facebook](../facebook/README.md) · [Instagram](../instagram/README.md)
+
+## Rolle im Python-Workspace
+
+Das Paket ist ein Plattform-Publisher, kein eigenständiges CLI-Programm.
+Der einzige öffentliche Einstieg ist `kulturbytes-social mastodon` bzw.
+`kulturbytes-social publish --platform mastodon`. Click stellt die Befehle bereit,
+httpx führt die HTTP-Anfragen aus. [`kulturbytes-common`](../common/README.md)
+übernimmt YAML-SourceDefinitions, JMESPath-Mapping auf `ContentItem`,
+Pydantic-Validierung und Jinja2-Templates für `RenderedPost` sowie Medienrichtlinien,
+Duplikatschutz und Veröffentlichungsjournal. Der Publisher liest keine rohen JSON-Felder.
 
 ## Voraussetzungen
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
 Zum Veröffentlichen benötigst du zusätzlich
 die Adresse deiner Mastodon-Instanz und einen Access Token für dein Konto, der Beiträge veröffentlichen und Medien hochladen darf.
-Behalte den gesamten Repository-Ordner: Der Publisher nutzt das gemeinsame
-Paket in `common/`.
+Klone das Repository wie in der [Installationsanleitung](../README.md#schnellstart).
+Für diese Entwicklungsinstallation bleibt der gesamte Checkout erhalten; uv bindet
+das gemeinsame Paket `kulturbytes-common` lokal ein.
 
 ## Schnellstart
 
@@ -20,7 +36,7 @@ Paket in `common/`.
 starte die Vorschau ohne Zugangsdaten:
 
 ```bash
-uv sync --all-packages
+uv sync --all-packages --locked
 uv run kulturbytes-social mastodon --dry-run --limit 10
 ```
 
@@ -45,7 +61,7 @@ Publisher: **`.env > Prozess-Environment > OS-Keyring`** für den Token und
 
 Zugangsdaten werden erst für `--publish` und `--check-auth` geladen.
 `--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
-Die Vorschau lädt Veranstaltungsdaten aus der Kulturbytes-API.
+Die Vorschau lädt die konfigurierte JSON-Quelle, standardmäßig die Kulturbytes-API.
 
 Trage die Zugangsdaten in die lokale `.env` ein:
 
@@ -94,14 +110,13 @@ weder Werte, Teile, Längen noch Hashes werden ausgegeben.
 Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder die Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish` oder `--check-auth` sind nicht zulässig; Auswahloptionen werden ignoriert.
-Die Paketbefehle akzeptieren dieselben Optionen.
 
 Service: `kulturbytes-social/mastodon`, Benutzername: `access-token`.
 `MASTODON_BASE_URL` wird ebenfalls zentral aus `.env` vor der Umgebung gelesen.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
-`keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
+`keyring` wird über `uv sync --all-packages --locked` installiert; die Anwendung ruft kein
 `secret-tool` auf und verwendet keine Klartext-Dateiablage. Backend-Fehler werden
 als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
 kaputtem Keyring. Server können extern bereitgestellte Systemd-Credentials bevorzugen;
@@ -227,8 +242,8 @@ So erkennt er beim nächsten Lauf bereits veröffentlichte Termine.
 
 Behalte diese Datenbank bei einem Umzug oder Update. Mit `MASTODON_DATABASE_PATH` kannst
 du einen anderen Pfad festlegen. Relative Werte beziehen sich auf das Verzeichnis
-der Standarddatenbank, absolute Werte werden unverändert verwendet. Facebook und Mastodon benötigen
-jeweils eine eigene Datenbank.
+der Standarddatenbank, absolute Werte werden unverändert verwendet. Jede Plattform benötigt
+eine eigene Datenbank.
 
 `--include-published` erlaubt nach zusätzlichen Bestätigungen auch eine erneute
 Veröffentlichung eines bekannten Termins. Nach erfolgreicher Veröffentlichung
@@ -250,19 +265,28 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 
 Die verfügbaren Optionen zeigt `uv run kulturbytes-social mastodon --help` auch ohne Zugangsdaten.
 
-## Entwicklung
+## Entwicklung und Tests
 
 Der Plattformcode liegt in [`src/kulturbytes_mastodon/cli.py`](src/kulturbytes_mastodon/cli.py).
 Gemeinsame API-Abfragen, Terminauswahl und Bilddownloads liegen in
 [`common/`](../common/). Hinweise zur Struktur und zum Testlauf findest du in
 der [Projektübersicht](../README.md#entwicklung).
 
+Installiere und prüfe den gesamten Workspace vom Repository-Hauptordner aus:
+
+```bash
+uv sync --all-packages --locked
+uv run --all-packages --locked python -m unittest discover -s tests -v
+uv run --all-packages --locked ruff format --check .
+uv run --all-packages --locked ruff check .
+```
+
+Die Tests simulieren HTTP, DNS und Zugangsdaten und verwenden temporäre Datenbanken.
+Sie veröffentlichen keine echten Beiträge. [GitHub Actions und CodeQL](../README.md#continuous-integration)
+prüfen Pull Requests mit Python 3.12/3.13, Ruff und Security-and-Quality-Queries.
+
 Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 [Migration und Datenbankpfade](../README.md#migration).
-
-## Lizenz
-
-[AGPL-3.0](../LICENSE)
 
 ## Gemeinsame Schutzmechanismen
 
@@ -297,7 +321,7 @@ beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
 `--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
 der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.
 
-## Konfigurierbare Quellen und Templates
+## Generische JSON-Quellen und Jinja2-Templates
 
 Mit `kulturbytes-social publish --platform mastodon --source NAME` oder dem bisherigen
 Plattformbefehl mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
@@ -308,3 +332,7 @@ Textkomposition erfolgt zentral über Jinja2, mit optionalen Overrides unter
 bleiben erhalten. Einrichtung, kanonische Felder, stabile IDs, installierte
 Konfigurationspfade und vollständige Beispiele stehen im
 [Quellenleitfaden](../README.md#data-sources).
+
+## Lizenz
+
+Open Source unter der [GNU Affero General Public License 3.0 (AGPL-3.0)](../LICENSE).

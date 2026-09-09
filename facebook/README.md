@@ -1,18 +1,34 @@
-# Kulturbytes Facebook Publisher
+# kulturbytes-facebook
 
-Teile Kulturbytes-Veranstaltungen auf deiner Facebook-Seite: Du wählst Termine
-im Terminal aus, prüfst die Vorschau und bestätigst die Veröffentlichung.
-Beim normalen Start bleibt es bei einer Vorschau.
+`kulturbytes-facebook` ist der Facebook-Page-Publisher für `kulturbytes-social`,
+eine Open-Source-Python-CLI für Social Media Publishing aus generischen JSON APIs.
+Entwickler, Redaktionen und Veranstalter können normalisierte Inhalte als Text-
+oder Fotobeiträge über die Meta Graph API veröffentlichen. Kulturbytes-Termine
+sind die Standardquelle; eigene JSON-Quellen verwenden denselben Ablauf.
 
-[Projektübersicht](../README.md) · [Facebook](../facebook/README.md) · [Mastodon](../mastodon/README.md)
+Du wählst Inhalte im Terminal aus, prüfst die Vorschau und bestätigst jeden
+Beitrag. Beim normalen Start bleibt es bei einer Vorschau.
+
+[Projektübersicht](../README.md) · [Instagram](../instagram/README.md) · [Mastodon](../mastodon/README.md)
+
+## Rolle im Python-Workspace
+
+Das Paket ist ein Plattform-Publisher, kein eigenständiges CLI-Programm.
+Der einzige öffentliche Einstieg ist `kulturbytes-social facebook` bzw.
+`kulturbytes-social publish --platform facebook`. Click stellt die Befehle bereit,
+httpx führt die HTTP-Anfragen aus. [`kulturbytes-common`](../common/README.md)
+übernimmt YAML-SourceDefinitions, JMESPath-Mapping auf `ContentItem`,
+Pydantic-Validierung und Jinja2-Templates für `RenderedPost` sowie Medienrichtlinien,
+Duplikatschutz und Veröffentlichungsjournal. Der Publisher liest keine rohen JSON-Felder.
 
 ## Voraussetzungen
 
 Du brauchst Python 3.12 oder neuer, `uv` und eine Internetverbindung.
 Zum Veröffentlichen benötigst du zusätzlich
 eine Facebook-Seiten-ID und den gemeinsamen Meta System User Access Token mit Zugriff auf diese Seite.
-Behalte den gesamten Repository-Ordner: Der Publisher nutzt das gemeinsame
-Paket in `common/`.
+Klone das Repository wie in der [Installationsanleitung](../README.md#schnellstart).
+Für diese Entwicklungsinstallation bleibt der gesamte Checkout erhalten; uv bindet
+das gemeinsame Paket `kulturbytes-common` lokal ein.
 
 ## Schnellstart
 
@@ -20,7 +36,7 @@ Paket in `common/`.
 starte die Vorschau ohne Zugangsdaten:
 
 ```bash
-uv sync --all-packages
+uv sync --all-packages --locked
 uv run kulturbytes-social facebook --dry-run --limit 10
 ```
 
@@ -59,7 +75,8 @@ beschreibbaren Konfigurationspfad. Details: [Projektübersicht](../README.md#lok
 
 ## Konfiguration
 
-Die Einstellungen werden aus den Umgebungsvariablen gelesen:
+Die Einstellungen folgen `.env > Prozessumgebung > Standard`; Tokens können
+zusätzlich aus dem OS-Keyring kommen:
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
@@ -71,7 +88,7 @@ Die Einstellungen werden aus den Umgebungsvariablen gelesen:
 Zugangsdaten werden erst für `--publish` und `--check-auth` geladen; validierte
 primäre Fallback-Tokens werden dabei in `.env` übernommen.
 `--dry-run`, `--help` und Modulimporte funktionieren ohne Zugangsdaten.
-Die Vorschau lädt Veranstaltungsdaten aus der Kulturbytes-API.
+Die Vorschau lädt die konfigurierte JSON-Quelle, standardmäßig die Kulturbytes-API.
 
 Setze die Zugangsdaten vor dem Zugangstest oder einer Veröffentlichung:
 
@@ -106,7 +123,6 @@ vorhanden/nicht vorhanden; weder Werte, Teile, Längen noch Hashes werden ausgeg
 Löschen verlangt eine Bestätigung und betrifft nur den Keyring, nicht `.env` oder Umgebung.
 Die Verwaltung führt keine Netzwerk- oder Datenbankoperationen aus. Kombinationen
 mit `--publish`, `--check-auth` oder `--resolve-page-token` sind nicht zulässig; Auswahloptionen werden ignoriert.
-Die Paketbefehle akzeptieren dieselben Optionen.
 
 Standardmäßig verwaltet dieser Befehl den gemeinsamen Meta-Token unter Service
 `kulturbytes-social/meta`, Benutzername `system-user-access-token`. Instagram nutzt
@@ -116,7 +132,7 @@ mit Deprecation-Hinweis verfügbar; ohne Selektor wird immer `meta` verwendet.
 
 Keyring ist optional. Auf Ubuntu können `sudo apt install gnome-keyring libsecret-tools`
 und eine entsperrte Secret-Service-Sitzung benötigt werden. Die Python-Abhängigkeit
-`keyring` wird über `uv sync --all-packages` installiert; die Anwendung ruft kein
+`keyring` wird über `uv sync --all-packages --locked` installiert; die Anwendung ruft kein
 `secret-tool` auf und akzeptiert keine Klartext-Keyring-Backends. Die primäre `.env`
 wird separat mit restriktiven Dateirechten verwaltet. Backend-Fehler werden
 als bereinigte Click-Fehler angezeigt. Umgebungsvariablen funktionieren auch bei
@@ -135,7 +151,7 @@ uv run kulturbytes-social facebook --check-auth
 Beispiel einer erfolgreichen Prüfung (Exitcode 0):
 
 ```text
-✓ Facebook-Seite erreichbar: Kulturbytes (1173614782497494)
+✓ Facebook-Seite erreichbar: Beispielseite (<FACEBOOK_PAGE_ID>)
 ✓ Facebook Publishing-Ziel mit Meta System User Token validiert
 ```
 
@@ -225,8 +241,8 @@ So erkennt er beim nächsten Lauf bereits veröffentlichte Termine.
 
 Behalte diese Datenbank bei einem Umzug oder Update. Mit `FACEBOOK_DATABASE_PATH` kannst
 du einen anderen Pfad festlegen. Relative Werte beziehen sich auf das Verzeichnis
-der Standarddatenbank, absolute Werte werden unverändert verwendet. Facebook und Mastodon benötigen
-jeweils eine eigene Datenbank.
+der Standarddatenbank, absolute Werte werden unverändert verwendet. Jede Plattform benötigt
+eine eigene Datenbank.
 
 `--include-published` erlaubt nach zusätzlichen Bestätigungen auch eine erneute
 Veröffentlichung eines bekannten Termins. Nach erfolgreicher Veröffentlichung
@@ -248,19 +264,28 @@ auf der Plattform fehl, bleibt der bisherige Datenbankeintrag unverändert.
 
 Die verfügbaren Optionen zeigt `uv run kulturbytes-social facebook --help` auch ohne Zugangsdaten.
 
-## Entwicklung
+## Entwicklung und Tests
 
 Der Plattformcode liegt in [`src/kulturbytes_facebook/cli.py`](src/kulturbytes_facebook/cli.py).
 Gemeinsame API-Abfragen, Terminauswahl und Bilddownloads liegen in
 [`common/`](../common/). Hinweise zur Struktur und zum Testlauf findest du in
 der [Projektübersicht](../README.md#entwicklung).
 
+Installiere und prüfe den gesamten Workspace vom Repository-Hauptordner aus:
+
+```bash
+uv sync --all-packages --locked
+uv run --all-packages --locked python -m unittest discover -s tests -v
+uv run --all-packages --locked ruff format --check .
+uv run --all-packages --locked ruff check .
+```
+
+Die Tests simulieren HTTP, DNS und Zugangsdaten und verwenden temporäre Datenbanken.
+Sie veröffentlichen keine echten Beiträge. [GitHub Actions und CodeQL](../README.md#continuous-integration)
+prüfen Pull Requests mit Python 3.12/3.13, Ruff und Security-and-Quality-Queries.
+
 Beim Wechsel von alten Aufrufen oder einer separaten Installation beachte die
 [Migration und Datenbankpfade](../README.md#migration).
-
-## Lizenz
-
-[AGPL-3.0](../LICENSE)
 
 ## Gemeinsamer Meta System User Token
 
@@ -331,7 +356,7 @@ beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
 `--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
 der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.
 
-## Konfigurierbare Quellen und Templates
+## Generische JSON-Quellen und Jinja2-Templates
 
 Mit `kulturbytes-social publish --platform facebook --source NAME` oder dem bisherigen
 Plattformbefehl mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
@@ -342,3 +367,7 @@ Textkomposition erfolgt zentral über Jinja2, mit optionalen Overrides unter
 bleiben erhalten. Einrichtung, kanonische Felder, stabile IDs, installierte
 Konfigurationspfade und vollständige Beispiele stehen im
 [Quellenleitfaden](../README.md#data-sources).
+
+## Lizenz
+
+Open Source unter der [GNU Affero General Public License 3.0 (AGPL-3.0)](../LICENSE).

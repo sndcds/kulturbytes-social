@@ -21,10 +21,15 @@ This file distinguishes current implementation details from requirements for fut
 ## Source and presentation boundaries
 
 Kulturbytes remains the default source. Configured JSON collections are also supported.
-The Kulturbytes-specific API rules below apply inside its adapter, not to generic sources.
+The Kulturbytes-specific API rules below are expressed in its YAML configuration.
 
 - The core must not branch on source names. `DEFAULT_SOURCE` belongs only at the
   CLI/configuration boundary; core workflows receive an explicit adapter and selector.
+- Kulturbytes must use `adapter: json`; do not reintroduce a dedicated Kulturbytes SourceAdapter.
+- Source-specific multi-step behavior belongs in generic source configuration.
+- Detail URL placeholders come from compiled source expressions and alter path segments only.
+- Identity checks and publication identity are generic source capabilities.
+- Source-specific presentation belongs in templates.
 - Source-specific behavior belongs in `SourceDefinition`/adapter capabilities.
   Generic `skip_past` defaults false; the bundled event source opts in explicitly.
 - The default templates must remain source-neutral. Branded text and tag priority
@@ -38,13 +43,14 @@ The Kulturbytes-specific API rules below apply inside its adapter, not to generi
 - Generic requests are public HTTPS/443 GETs, with DNS pinning and no automatic
   redirects. Headers are static and restricted to Accept/User-Agent/X-API-Version;
   source authentication and HTTP are intentionally unsupported. Use explicit
-  collection/object modes and encode exactly one `{id}` detail path segment.
+  collection/object modes and encode each declared detail placeholder as an opaque path segment.
+  The simple `{id}` mode remains supported.
 - Preserve one transport pool per logical HTTPS origin. Two allowed hosts sharing
   an IP must never share an IP-keyed TLS session. Check DNS again on every attempt.
 - `publish --platform ...` delegates to existing platform flows; no duplicate
   credential, confirmation, retry or reservation implementation.
 - Source-specific JSON property names must stay inside source adapters/mappings
-  and the existing Kulturbytes boundary helpers they call.
+  and source-specific templates; no dedicated parsing/API/media/model helpers.
 - All source data must become `ContentItem` before rendering. Its only required
   content field is `title`; publishing additionally requires a stable `id`.
 - JMESPath is the supported extraction language. Define generic sources in
@@ -139,7 +145,7 @@ For each selected event fetch:
 GET https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}
 ```
 
-Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The Kulturbytes adapter creates a copy with `summary` set from the selected list record (or an empty string), then maps it into canonical `text` using list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
+Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The generic engine retains a private list/detail JSON context. Kulturbytes YAML maps `text` with `trim(trim(list.summary) || detail.description)` without modifying API response objects. Mastodon still applies its platform-specific normalization and length limit.
 
 The discovery response wraps the list in `data.events`; the detail response wraps one event in `data`. The field lists below describe possible fields, not a guaranteed schema. A live sample checked on 2026-09-07 omitted `tags`, `content_language`, `event_types`, and `event_links` from the detail response, and exposed `price_type` at event level. Several optional date fields were also absent. Handle missing fields gracefully; do not infer that missing tags mean the discovery record had no tags. Current formatting reads tags only from the detail object and prices only from `date`.
 
@@ -522,10 +528,10 @@ All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed re
 
 ## Boundary validation, media security and read retries
 
-- `sources/kulturbytes_models.py` validates bundled-source discovery and detail
-  responses with strict Pydantic models. Only the source adapter receives their
-  dictionaries; publishers receive canonical `ContentItem`/`RenderedPost`.
-  Model only consumed fields. Optional fields may be absent or null. Identifiers are
+- Request-local compiled `assertions` in Kulturbytes YAML validate consumed discovery
+  and detail fields; canonical Pydantic models validate the final mappings.
+  Only the generic source engine receives JSON; publishers receive canonical
+  `ContentItem`/`RenderedPost`. Do not reintroduce source-specific Python models. Optional fields may be absent or null. Identifiers are
   bounded non-empty safe path segments, not UUID objects, to retain opaque/simplified IDs.
 - Invalid discovery envelopes fail; malformed individual records are reported/skipped.
   An invalid matching direct target fails nonzero even if a valid sibling matches too.
@@ -991,19 +997,9 @@ API reference: [Meta's Instagram publishing documentation](https://www.postman.c
 
 Platform-neutral content is represented by `ContentItem`. Final text composition lives in the Jinja templates, with the shared renderer enforcing platform limits. The platform builders are thin canonical wrappers around `render_post`.
 
-Existing shared helpers include:
-
-```text
-get_event_url
-get_start_datetime
-build_address
-normalize_hashtag
-build_hashtags
-format_price
-get_image_url
-download_image
-strip_markdown
-```
+Shared Python helpers include `normalize_hashtag`, `strip_markdown`,
+`render_post` and `download_post_image`. Source URL/address/price/image mappings
+are declared in YAML; branded hashtag composition belongs in templates.
 
 Existing platform-specific helpers include:
 
@@ -1241,12 +1237,13 @@ src/kulturbytes_social/cli.py   # root Click group and command registration
 src/kulturbytes_social/attempts.py # explicit local publication recovery
 uv.lock                        # shared lockfile
 common/src/kulturbytes_common/
-    sources/kulturbytes_api.py  # bundled source API boundary and metadata
+    sources/generic.py         # generic configured list/detail flow
+    sources/rules.py           # generic assertions and mapping functions
     media.py                   # image URLs and downloads
     formatting.py              # Markdown normalization
     selection.py               # interactive selection
     database.py                # paths, schema ownership, duplicate lookup
-    models.py                  # strict API boundary
+    sources/models.py          # strict canonical boundary
     timezone.py                # Berlin business clock
     http.py                    # safe GET retries
     media_security.py          # public HTTPS / DNS / redirects

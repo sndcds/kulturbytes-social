@@ -273,7 +273,8 @@ bei der automatischen Ergänzung von `publisher_metadata`, `publication_attempts
 und dem eindeutigen Reservierungsindex erhalten.
 
 API-Antworten werden vor der Verwendung validiert; „heute“ meint `Europe/Berlin`.
-Medien sind auf `https://api.kulturbytes.de:443` beschränkt. Der gemeinsame Transport
+Medien folgen `media.allowed_hosts` der Quelle, ausschließlich über HTTPS/443.
+Kulturbytes erlaubt `api.kulturbytes.de`; generische Quellen konfigurieren eigene Hosts. Der gemeinsame Transport
 verbindet direkt zur geprüften öffentlichen IP mit ursprünglichem Host-Header,
 TLS-SNI und aktivierter Zertifikatsprüfung. DNS-Rebinding und Umgebungs-Proxys können
 diese lokale Zielbindung nicht umgehen; Medien verwenden `trust_env=False`.
@@ -298,7 +299,8 @@ der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erford
 
 ## Konfigurierbare Quellen und Templates
 
-Mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
+Mit `kulturbytes-social publish --platform mastodon --source NAME` oder dem bisherigen
+Plattformbefehl mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
 `kulturbytes`. `--item-id ID` wählt einen Eintrag direkt aus. Die bisherigen
 `--event-uuid`/`--date-identifier`-Flags bleiben für Kulturbytes erhalten.
 Textkomposition erfolgt zentral über Jinja2, mit optionalen Overrides unter

@@ -297,3 +297,14 @@ Die [Projektanleitung](../README.md#veröffentlichungsjournal-und-wiederherstell
 beschreibt `kulturbytes-social attempts list` mit `--active`, `--state`,
 `--date-uuid`, `--limit` (neueste 50 zuerst; 0 = alle) und `attempts resolve`, einschließlich
 der nötigen Prüfung nach einem Prozessabsturz. Dafür sind keine Tokens erforderlich.
+
+## Konfigurierbare Quellen und Templates
+
+Mit `--source NAME` lässt sich eine YAML-/JMESPath-Quelle auswählen; Standard bleibt
+`kulturbytes`. `--item-id ID` wählt einen Eintrag direkt aus. Die bisherigen
+`--event-uuid`/`--date-identifier`-Flags bleiben für Kulturbytes erhalten.
+Textkomposition erfolgt zentral über Jinja2, mit optionalen Overrides unter
+`templates/<quelle>/`. Einzelbestätigung, Dry Run, Authentifizierung und Bildschutz
+bleiben erhalten. Einrichtung, kanonische Felder, stabile IDs, installierte
+Konfigurationspfade und vollständige Beispiele stehen im
+[Quellenleitfaden](../README.md#data-sources).

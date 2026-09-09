@@ -301,8 +301,9 @@ oder ausgefilterte Termine führen zu einer Fehlermeldung und einem Fehler-Exitc
 
 ## Inhalt der Beiträge
 
-Alle Publisher übernehmen Veranstaltungsinformationen aus der Kulturbytes-API
-und verlinken auf den Termin bei Kulturbytes. Vorhandene Veranstaltungsbilder
+Standardmäßig übernehmen alle Publisher Veranstaltungsinformationen aus der Kulturbytes-API
+und verlinken auf den Termin bei Kulturbytes. Mit `--source` lassen sich weitere
+konfigurierte JSON-Quellen auswählen. Vorhandene Veranstaltungsbilder
 und Hashtags ergänzen die Beiträge.
 
 Facebook verwendet einen ausführlichen Beitrag und veröffentlicht vorhandene
@@ -312,6 +313,210 @@ stehen unter [Facebook](facebook/README.md#inhalt-der-beiträge) und
 [Mastodon](mastodon/README.md#inhalt-der-beiträge). Instagram benötigt ein JPEG-Hauptbild
 und verwendet bis zu 2.200 Zeichen sowie höchstens fünf erzeugte Hashtags; siehe
 [Instagram](instagram/README.md#bild-und-beitragstext).
+
+## Data Sources
+
+Kulturbytes bleibt die Standardquelle. Weitere JSON-Quellen werden ausschließlich
+über YAML konfiguriert; der Ablauf ist `SourceAdapter → SocialItem → Jinja2 →
+RenderedPost → Publisher`. Der Kulturbytes-Adapter behält seine Listen- und
+Detailabfragen, Identitätsprüfung und die Priorität Listen-Summary vor
+Detail-Description. Generische Quellen liefern ihre vollständigen Einträge mit
+einem GET; zusätzliche Detail-Endpunkte und einzelne Objektantworten werden
+nicht automatisch erraten.
+
+```bash
+uv run kulturbytes-social sources list
+uv run kulturbytes-social sources validate kulturbytes
+uv run kulturbytes-social facebook --source kulturbytes
+uv run kulturbytes-social mastodon --source city-events --item-id jazz-1
+```
+
+`sources list` und `sources validate SOURCE` arbeiten lokal ohne HTTP, Credentials
+oder Datenbankzugriff. Validierung prüft YAML, Namen, Adapter, URLs, JMESPath und
+alle drei Templates. Ob eine tatsächliche Antwort zum Mapping passt, wird beim
+Abruf geprüft. Hilfe und bestehende Authentifizierungsbefehle bleiben verfügbar.
+
+Quellennamen sind eindeutig, maximal 64 Zeichen lang und bestehen aus
+Kleinbuchstaben, Ziffern, `_` und `-`; das erste Zeichen ist ein Buchstabe oder eine
+Ziffer. Doppelte Namen werden auch über mehrere Konfigurationsverzeichnisse hinweg
+abgelehnt. Endpunkte sind vertrauenswürdige Betreiberkonfiguration. Abrufe verwenden
+einen eigenen `httpx.Client` mit festen Timeouts und begrenzten GET-Retries, ohne
+Social-Authorization, Cookies, `.netrc`, Umgebungs-Proxies oder Redirect-Following.
+Fehler zeigen keine vollständigen Antworten oder Endpunkt-Zugangsdaten.
+
+Im Checkout liegen Konfigurationen unter `sources/` und `templates/`, unabhängig
+vom Arbeitsverzeichnis. Diese beiden Verzeichnisse sind Symlinks auf
+`common/src/kulturbytes_common/data/`; damit werden dieselben Dateien in Wheels
+und Quelldistributionen mitgeliefert. Bei einer installierten Anwendung werden
+`$XDG_CONFIG_HOME/kulturbytes-social/{sources,templates}` (Standard:
+`~/.config/kulturbytes-social/`) und die mitgelieferten Paketdaten verwendet.
+Ein relatives `XDG_CONFIG_HOME` wird ignoriert. Quelldefinitionen werden ergänzt,
+nicht anhand gleicher Namen überschrieben.
+
+## JSON Source Mapping
+
+Ein generisches Mapping enthält genau diese Einstellungen:
+
+```yaml
+name: city-events
+adapter: json
+endpoint: https://example.org/api/events
+root: events
+fields:
+  id: id
+  title: name
+  text: description
+  city: location.city
+  venue: location.name
+  date: start
+  image_url: image.url
+```
+
+`endpoint` muss eine HTTP(S)-URL ohne eingebettete Zugangsdaten sein. `root` muss
+eine Liste ergeben. `fields` ordnet ausschließlich bekannte kanonische Felder zu;
+`title` ist erforderlich. Fehlende optionale Ergebnisse werden `None`, fehlende
+Tags werden `[]`. Falsche Typen, fehlende Titel und doppelte nichtleere IDs führen
+zu einem Fehler. Die Quelle und betroffenen kanonischen Felder werden genannt.
+
+Die vordefinierte Spezialquelle benötigt nur:
+
+```yaml
+name: kulturbytes
+adapter: kulturbytes
+```
+
+## JMESPath
+
+`root` und sämtliche Werte unter `fields` sind JMESPath-Ausdrücke, die beim Laden
+kompiliert werden. Beispiele: `events`, `places`, `data.items`, `event.headline`,
+`media[0].url`. Python-Fallbackketten gehören nicht in Publisher.
+Die mitgelieferten Dateien `sources/example-simple.yaml` und
+`sources/example-nested.yaml` zeigen äquivalente flache und verschachtelte
+Extraktion. Ihre `example.org`-Adressen sind Platzhalter.
+
+**Mapping bestimmt, woher Daten kommen. Templates bestimmen, wie sie erscheinen.**
+
+## Canonical SocialItem
+
+`SocialItem` ist ein striktes Pydantic-Modell ohne rohe API-Dictionaries.
+Unbekannte Felder und implizite Typumwandlungen werden abgelehnt.
+
+| Felder | Typ und Bedeutung |
+| --- | --- |
+| `title` | Nichtleerer String; einziges Pflichtfeld für Inhalte |
+| `id` | Optionaler stabiler String, 1–200 Zeichen; für Veröffentlichung erforderlich |
+| `subtitle`, `text` | Optionale Strings |
+| `city`, `venue`, `address` | Optionale Ortsangaben als Strings |
+| `date`, `end_date` | Optionales ISO-Datum `YYYY-MM-DD` |
+| `time` | Optionale lokale Zeit `HH:MM` oder `HH:MM:SS` |
+| `image_url`, `link`, `ticket_link` | Optionale HTTP(S)-URLs ohne eingebettete Zugangsdaten |
+| `image_alt`, `image_name` | Optionaler Alternativtext und sicherer Upload-Dateiname |
+| `tags` | Liste von Strings; Standard `[]`, getrimmt, leere und identische Tags entfernt |
+| `organizer`, `price` | Optionale bereits lesbare Strings |
+
+Vorhandene Datumsangaben werden gegen den heutigen Tag in Europe/Berlin geprüft;
+Einträge ohne Datum bleiben auswählbar. Stadtfilter, Limit, interaktive Auswahl,
+Dry Run und Einzelbestätigung gelten für alle Quellen. `--item-id` wählt eine ID
+vor Anwendung des Listenlimits aus. Die bisherigen Flags `--event-uuid` und
+`--date-identifier` gelten ausschließlich für Kulturbytes und sind nicht mit
+`--item-id` kombinierbar.
+
+Ein Titel ohne ID genügt für die Vorschau. Eine Veröffentlichung braucht eine
+stabile ID, damit Wiederholungs- und Parallelitätsschutz greifen. Generische
+Schlüssel werden als `<quellenname>:<id>` gespeichert; Kulturbytes verwendet
+weiterhin seine bisherige Termin-ID. Quellenname und ID dürfen nach einer
+Veröffentlichung nicht beliebig geändert werden. Bestehende Journale, Recovery
+und Datenbankschemata bleiben kompatibel; ihre internen historischen Spaltennamen
+sind keine Felder des öffentlichen Inhaltsmodells. Bei Journalabfragen mit
+`--date-uuid` ist für generische Quellen der vollständige zusammengesetzte Schlüssel
+anzugeben.
+
+## Jinja2 Templates
+
+Die zentrale `TemplateRenderer`-Instanz liefert `RenderedPost` mit `text`,
+`image_url`, `image_alt` und `image_name`. Publisher lesen nur kanonische oder
+bereits gerenderte Inhalte. Die Standardtemplates funktionieren auch mit einem
+reinen Titel und lassen fehlende optionale Abschnitte weg.
+
+Auflösung für eine Plattform, etwa Facebook:
+
+1. `templates/<quelle>/facebook.j2`
+2. Falls nicht vorhanden: `templates/default/facebook.j2`
+
+Bei installierter Nutzung wird innerhalb jedes Schritts zuerst das XDG-Verzeichnis,
+danach das Paket durchsucht. Ein mitgeliefertes quellenspezifisches Template hat
+somit Vorrang vor einem benutzerdefinierten Default. Für Instagram und Mastodon
+werden entsprechend `instagram.j2` und `mastodon.j2` gesucht.
+
+Templates sind vertrauenswürdige Projekt-/Administratorkonfiguration. Die Sandbox
+stellt nur kanonische Felder und die Filter `default`, `join`, `trim`, `lower`,
+`upper`, `plain`, `dateformat` und `hashtags` bereit. Sie erlaubt keine Python-
+Attribute, beliebigen Aufrufe, Globals, Includes, Imports oder frei wählbaren
+Dateipfade. Unbekannte Variablen und Symlinks außerhalb des jeweiligen
+Konfigurationsverzeichnisses werden abgelehnt. Quelldaten werden nur als Werte
+eingesetzt und niemals erneut als Template ausgewertet.
+
+Instagram und Mastodon kürzen das Inhaltsfeld `text` und rendern erneut, statt den
+fertigen Beitrag abzuschneiden. Mastodon kürzt an Wortgrenzen und berücksichtigt
+das abgefragte Instanzlimit (Fallback 500). Bei Bedarf entfallen dort optionale
+Metadaten. Pflicht-Link und vollständige generierte Hashtags müssen auch in eigenen
+Templates enthalten bleiben; zu lange feste Inhalte werden abgelehnt. Instagram
+bleibt bei 2.200 Zeichen und maximal fünf Hashtags; zusätzliche Hashtags in einem
+eigenen Template oder Beschreibungstext können deshalb einen Fehler auslösen.
+Facebook behält seine bisherige Markdown-Darstellung, Instagram/Mastodon bereinigen
+sie. Die Kulturbytes-Regressionstests sichern die bisherigen Texte exakt ab.
+
+## Adding a Source
+
+Dieses vollständige Beispiel ergänzt eine Textquelle ohne Python-Änderung. Der
+angegebene HTTPS-Endpunkt muss eine Antwort dieser Form liefern:
+
+```json
+{"events":[{"id":"jazz-1","name":"Jazzabend","description":"Musik am Hafen.","city":"Flensburg","date":"2099-10-01","url":"https://example.org/jazz","tags":["Live Musik"]}]}
+```
+
+Im Repository-Hauptverzeichnis:
+
+```bash
+cat > sources/city-events.yaml <<'YAML'
+name: city-events
+adapter: json
+endpoint: https://example.org/api/events
+root: events
+fields:
+  id: id
+  title: name
+  text: description
+  city: city
+  date: date
+  link: url
+  tags: tags
+YAML
+uv run kulturbytes-social sources validate city-events
+# Zuerst den Platzhalter-endpoint durch die eigene JSON-URL ersetzen.
+uv run kulturbytes-social facebook --source city-events --item-id jazz-1
+```
+
+Für eine installierte Anwendung stattdessen die Datei unter
+`${XDG_CONFIG_HOME:-$HOME/.config}/kulturbytes-social/sources/city-events.yaml`
+anlegen (Verzeichnis gegebenenfalls mit `mkdir -p` erstellen) und
+`kulturbytes-social` ohne `uv run` ausführen. Für eine eigene Facebook-Darstellung
+kann optional `templates/city-events/facebook.j2` angelegt werden:
+
+```jinja2
+{{ title }}
+{% if text %}{{ text }}{% endif %}
+{% if link %}{{ link }}{% endif %}
+{{ tags | hashtags(city=city) }}
+```
+
+Ohne eigenes Template wird der Default verwendet. Für Instagram ist zusätzlich
+ein öffentliches JPEG erforderlich. Alle gemappten Bild-URLs bleiben unvertrauenswürdig:
+Downloads und JPEG-Prüfung nutzen unverändert den bestehenden SSRF-Schutz einschließlich
+HTTPS, DNS-/Redirect-Prüfung und Host-Allowlist (derzeit `api.kulturbytes.de`). Ein
+beliebiger externer Bildhost wird durch ein YAML-Mapping nicht freigeschaltet.
+Facebook und Mastodon unterstützen auch Textbeiträge ohne Bild; fehlgeschlagene
+Bildprüfungen führen weiterhin nicht zu einem stillen Text-Fallback.
 
 ## Lokale Daten
 
@@ -517,7 +722,11 @@ common/src/kulturbytes_common/
   formatting.py   Gemeinsame Markdown-Bereinigung
   selection.py    Terminliste und interaktive Auswahl
   database.py     Prüfung auf bereits veröffentlichte Termine
-  workflow.py     Laden, Filtern, Sortieren und Veröffentlichen
+  sources/        YAML/JMESPath, Kulturbytes-Adapter und SocialItem
+  rendering.py    Zentraler Jinja-Renderer und sichere Textkürzung
+  data/           Mitgelieferte YAML- und Jinja-Dateien
+  storage.py      Gemeinsame Plattformtabellen und kanonische Journal-Snapshots
+  workflow.py     Quellenunabhängiges Laden, Filtern und Veröffentlichen
 facebook/src/kulturbytes_facebook/cli.py
 mastodon/src/kulturbytes_mastodon/cli.py
 instagram/src/kulturbytes_instagram/cli.py
@@ -525,8 +734,8 @@ tests/test_publishers.py
 tests/test_instagram.py
 ```
 
-Die Plattformpakete enthalten ihre Konfiguration, Postformatierung, API-Aufrufe
-und Datenbankschemata. Führe die gemeinsamen Tests im Repository-Hauptordner aus:
+Die Plattformpakete enthalten Konfiguration, Vorschau, Bestätigung und API-Aufrufe.
+Textkomposition, Mapping und gemeinsame Speicherung liegen in `common/`. Führe die gemeinsamen Tests im Repository-Hauptordner aus:
 
 ```bash
 uv run --all-packages python -m unittest discover -s tests -v
@@ -536,6 +745,10 @@ Die Tests verwenden simulierte HTTP-Antworten, DNS, Schlafzeiten und temporäre 
 Zusätzliche Regressionstests prüfen API-Modelle, Berliner Tagesgrenzen, GET-Retries,
 SSRF/Redirects sowie Reservierungen über getrennte SQLite-Verbindungen und die
 Wiederherstellung nach Remote-Erfolg mit anschließendem SQLite-Fehler.
+Quellen- und Template-Tests prüfen YAML/JMESPath, strikte Typen, Sandbox, generische
+CLI-Abläufe und zwölf gesicherte Kulturbytes-Ausgaben. Ein Installationstest baut
+das Common-Wheel aus einer Quelldistribution und lädt seine Assets außerhalb des
+Checkouts.
 
 ## Lizenz
 

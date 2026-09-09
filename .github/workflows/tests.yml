@@ -30,7 +30,8 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        # setup-uv publishes v10.0.1 without a v10 major alias.
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.12"
           enable-cache: true

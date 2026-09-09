@@ -16,12 +16,14 @@ from ..network import MediaPolicy, MediaPolicyError, https_url
 from .errors import SourceConfigurationError, SourceNotFound
 from .models import ContentItem
 from .paths import config_roots
+from .rules import Assertion, compile_assertions
 
 if TYPE_CHECKING:
     from . import SourceAdapter
 
 NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 SAFE_HEADERS = frozenset({"accept", "user-agent", "x-api-version"})
+PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class SourceBehavior(BaseModel):
@@ -57,23 +59,53 @@ class RequestDefinition:
     headers: dict[str, str] = field(default_factory=dict)
     query: dict[str, str] = field(default_factory=dict)
     fields: dict[str, ParsedResult] | None = None
+    placeholders: dict[str, ParsedResult] = field(default_factory=dict)
 
-    def item_url(self, item_id: str) -> str:
+    assertions: tuple[Assertion, ...] = ()
+    identity_checks: tuple[tuple[ParsedResult, ParsedResult], ...] = ()
+    allow_duplicate_ids: bool = False
+
+    def item_url(
+        self,
+        item_id: str | None = None,
+        *,
+        context: dict | None = None,
+        source_name: str = "JSON",
+    ) -> str:
         # One opaque path segment; no format(), Jinja, query or origin substitution.
-        if not item_id or item_id in (".", ".."):
-            raise SourceConfigurationError("Ungültige ID für Detailabruf.")
-        return self.url.replace("{id}", quote(item_id, safe=""))
+        from .mapping import evaluate
+
+        values = (
+            {
+                key: evaluate(source_name, key, expr, context)
+                for key, expr in self.placeholders.items()
+            }
+            if self.placeholders
+            else {"id": item_id}
+        )
+        for key, value in values.items():
+            if not isinstance(value, str) or not value.strip() or value in (".", ".."):
+                raise SourceConfigurationError(
+                    f"Quelle {source_name}: ungültiger Detail-Platzhalter {key}."
+                )
+        return PLACEHOLDER.sub(lambda match: quote(values[match[1]], safe=""), self.url)
 
 
 @dataclass(frozen=True)
 class SourceDefinition:
     name: str
     adapter: str
-    listing: RequestDefinition | None
+    listing: RequestDefinition
     detail: RequestDefinition | None
     fields: dict[str, ParsedResult]
     media: MediaPolicy
     behavior: SourceBehavior
+
+    identity: dict[str, ParsedResult] = field(default_factory=dict)
+    selectors: dict[str, tuple[ParsedResult, ...]] = field(default_factory=dict)
+    filters: tuple[tuple[ParsedResult, str, object], ...] = ()
+    derived: dict[str, tuple[str | ParsedResult, ...]] = field(default_factory=dict)
+    skip_invalid: bool = False
 
     @property
     def root(self):
@@ -132,17 +164,31 @@ def request_definition(
             "root",
             "mode",
             "fields",
+            "placeholders",
+            "assertions",
+            "identity_checks",
+            "allow_duplicate_ids",
         }:
+            raise ValueError
+        if not detail and raw.get("identity_checks"):
+            raise ValueError
+        if detail and raw.get("allow_duplicate_ids"):
             raise ValueError
         url = raw.get("url")
         if not isinstance(url, str):
             raise ValueError
         checked = url
+        placeholders = raw.get("placeholders", {})
+        if not isinstance(placeholders, dict) or (placeholders and not detail):
+            raise ValueError
         if detail:
-            # Exactly one {id} in the path; braces anywhere else are rejected.
-            if url.count("{id}") != 1 or "{id}" not in urlsplit(url).path:
+            names = PLACEHOLDER.findall(url)
+            declared = set(placeholders) if placeholders else {"id"}
+            if set(names) != declared or len(names) != len(declared):
                 raise ValueError
-            checked = url.replace("{id}", "placeholder")
+            if names != PLACEHOLDER.findall(urlsplit(url).path):
+                raise ValueError
+            checked = PLACEHOLDER.sub("placeholder", url)
         if "{" in checked or "}" in checked:
             raise ValueError
         https_url(checked)
@@ -164,7 +210,118 @@ def request_definition(
         headers,
         query,
         mapping(name, raw["fields"]) if "fields" in raw else None,
+        {key: expression(name, key, value) for key, value in placeholders.items()},
+        compile_assertions(name, raw.get("assertions", {}), expression),
+        compile_checks(name, raw.get("identity_checks", [])),
+        checked_bool(name, raw.get("allow_duplicate_ids", False)),
     )
+
+
+def checked_bool(name: str, value: object) -> bool:
+    if type(value) is not bool:
+        raise SourceConfigurationError(
+            f"Quelle {name}: Boolesche Einstellung erwartet."
+        )
+    return value
+
+
+def compile_checks(
+    name: str, raw: object
+) -> tuple[tuple[ParsedResult, ParsedResult], ...]:
+    if not isinstance(raw, list):
+        raise SourceConfigurationError(
+            f"Quelle {name}: identity_checks muss eine Liste sein."
+        )
+    result = []
+    for check in raw:
+        if not isinstance(check, dict) or set(check) != {"left", "right"}:
+            raise SourceConfigurationError(
+                f"Quelle {name}: ungültige Identitätsprüfung."
+            )
+        result.append(
+            tuple(expression(name, side, check[side]) for side in ("left", "right"))
+        )
+    return tuple(result)
+
+
+def compile_identity(name: str, raw: object) -> dict[str, ParsedResult]:
+    if not isinstance(raw, dict) or (
+        raw and set(raw) != {"publication_key", "content_key", "revision"}
+    ):
+        raise SourceConfigurationError(
+            f"Quelle {name}: ungültige publication identity."
+        )
+    return {key: expression(name, key, value) for key, value in raw.items()}
+
+
+def compile_selectors(name: str, raw: object) -> dict[str, tuple[ParsedResult, ...]]:
+    # The two existing CLI arguments are the only compatibility surface.
+    if not isinstance(raw, dict) or (
+        raw and set(raw) != {"event_uuid", "date_identifier"}
+    ):
+        raise SourceConfigurationError(f"Quelle {name}: ungültige Legacy-Selektoren.")
+    result = {}
+    for key, values in raw.items():
+        if not isinstance(values, list) or not values:
+            raise SourceConfigurationError(
+                f"Quelle {name}: Selektor benötigt eine Ausdrucksliste."
+            )
+        result[key] = tuple(expression(name, key, value) for value in values)
+    return result
+
+
+def compile_filters(
+    name: str, raw: object
+) -> tuple[tuple[ParsedResult, str, object], ...]:
+    if not isinstance(raw, list):
+        raise SourceConfigurationError(f"Quelle {name}: filters muss eine Liste sein.")
+    result = []
+    for rule in raw:
+        if not isinstance(rule, dict) or "expression" not in rule or len(rule) != 2:
+            raise SourceConfigurationError(f"Quelle {name}: ungültiger Filter.")
+        op = next(key for key in rule if key != "expression")
+        value = rule[op]
+        if op not in {"equals", "not_equals", "truthy", "falsy"} or type(value) not in (
+            str,
+            int,
+            float,
+            bool,
+            type(None),
+        ):
+            raise SourceConfigurationError(f"Quelle {name}: ungültiger Filteroperator.")
+        if op in {"truthy", "falsy"} and value is not True:
+            raise SourceConfigurationError(
+                f"Quelle {name}: truthy/falsy benötigt true."
+            )
+        result.append((expression(name, "filter", rule["expression"]), op, value))
+    return tuple(result)
+
+
+def compile_derived(
+    name: str, raw: object
+) -> dict[str, tuple[str | ParsedResult, ...]]:
+    if not isinstance(raw, dict) or set(raw) - ContentItem.model_fields.keys():
+        raise SourceConfigurationError(f"Quelle {name}: ungültige abgeleitete Felder.")
+    result = {}
+    for key, rule in raw.items():
+        if (
+            not isinstance(rule, dict)
+            or set(rule) != {"concat"}
+            or not isinstance(rule["concat"], list)
+        ):
+            raise SourceConfigurationError(f"Quelle {name}: derived benötigt concat.")
+        parts = []
+        for part in rule["concat"]:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and set(part) == {"expr"}:
+                parts.append(expression(name, key, part["expr"]))
+            else:
+                raise SourceConfigurationError(
+                    f"Quelle {name}: ungültiger concat-Teil."
+                )
+        result[key] = tuple(parts)
+    return result
 
 
 def load_definition(path: Path) -> SourceDefinition:
@@ -187,6 +344,11 @@ def load_definition(path: Path) -> SourceDefinition:
         "fields",
         "media",
         "behavior",
+        "identity",
+        "legacy_selectors",
+        "filters",
+        "derived",
+        "skip_invalid",
     }:
         raise SourceConfigurationError("Unbekannte oder fehlende Quelleneinstellungen.")
     name = raw.get("name")
@@ -204,12 +366,6 @@ def load_definition(path: Path) -> SourceDefinition:
         raise SourceConfigurationError(
             f"Quelle {name}: ungültige media- oder behavior-Konfiguration."
         ) from None
-    if adapter != "json":
-        if set(raw) - {"name", "adapter", "media", "behavior"}:
-            raise SourceConfigurationError(
-                f"Quelle {name}: der Adapter besitzt eigene Abrufregeln."
-            )
-        return SourceDefinition(name, adapter, None, None, {}, media, behavior)
     forms = [key for key in ("endpoint", "request", "list") if key in raw]
     if len(forms) != 1:
         raise SourceConfigurationError(
@@ -240,16 +396,29 @@ def load_definition(path: Path) -> SourceDefinition:
             **{key: raw[key] for key in ("root", "mode") if key in raw},
             **listing,
         }
+    parsed_list = request_definition(name, listing)
+    parsed_detail = (
+        request_definition(name, raw["detail"], detail=True)
+        if "detail" in raw
+        else None
+    )
+    if parsed_detail and parsed_detail.placeholders and not parsed_list.fields:
+        raise SourceConfigurationError(
+            f"Quelle {name}: deklarierte Detail-Platzhalter benötigen list.fields für die Vorschau."
+        )
     return SourceDefinition(
         name,
         adapter,
-        request_definition(name, listing),
-        request_definition(name, raw["detail"], detail=True)
-        if "detail" in raw
-        else None,
+        parsed_list,
+        parsed_detail,
         mapping(name, raw.get("fields")),
         media,
         behavior,
+        compile_identity(name, raw.get("identity", {})),
+        compile_selectors(name, raw.get("legacy_selectors", {})),
+        compile_filters(name, raw.get("filters", [])),
+        compile_derived(name, raw.get("derived", {})),
+        checked_bool(name, raw.get("skip_invalid", False)),
     )
 
 

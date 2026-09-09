@@ -1,6 +1,5 @@
-"""Bundled adapter registration, independent of a configured source's name."""
+"""Generic adapter registration, independent of configured source names."""
 
 from .generic import JsonSourceAdapter
-from .kulturbytes import KulturbytesSourceAdapter
 
-ADAPTERS = {"json": JsonSourceAdapter, "kulturbytes": KulturbytesSourceAdapter}
+ADAPTERS = {"json": JsonSourceAdapter}

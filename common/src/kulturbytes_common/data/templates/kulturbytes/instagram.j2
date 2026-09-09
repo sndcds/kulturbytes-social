@@ -29,7 +29,7 @@ Veranstalter: {{ organizer }}
 
 {{ text }}
 {% endif %}
-{% set social_tags = tags | hashtags(city=city, priority=['Kulturbytes', city], limit=5) %}
+{% set social_tags = (tags + ['Kulturbytes']) | hashtags(city=city, priority=['Kulturbytes', city], limit=5) %}
 {% if link or social_tags %}
 
 {% endif %}

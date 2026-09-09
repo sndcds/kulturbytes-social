@@ -11,6 +11,7 @@ Current targets:
 - Facebook Pages
 - Instagram professional accounts (single-image feed posts)
 - Mastodon, especially `https://norden.social`
+- Bluesky / AT Protocol PDS
 
 Agents working in this repository should preserve the same event-selection, enrichment, deduplication, preview, and publishing behavior across all publishers wherever possible.
 
@@ -1307,3 +1308,14 @@ For publishing changes, verify the applicable requirements below and identify re
 - Transform RenderedPost image URLs and direct ContentItem media calls consistently; previews and Instagram validation/publication must use the transformed URL.
 - Instagram's bundled output format is jpg. Keep JPEG validation and public URL publishing. Pluto performs conversion remotely; do not add local conversion or hosting.
 - Preserve private source media policy, host validation, DNS pinning, no social credentials in media requests, and golden text fixtures.
+
+## Bluesky publisher invariants
+
+- `kulturbytes-social bluesky` and generic `publish --platform bluesky` share existing source selection and publication services. Never add source-name checks or raw source fields to Bluesky Python code.
+- Document only App Password authentication. Resolve BLUESKY_APP_PASSWORD through shared .env > environment > keyring; handle and service URL use get_config. Import/help/dry run do not resolve secrets or create sessions.
+- Authenticate at the configured HTTPS PDS using createSession; validate did, handle and accessJwt. JWTs remain in memory. No session refresh, credential persistence, or dynamic forwarding to response-provided endpoints.
+- DID is the repository/journal target identity. AT URI is the canonical post identifier; bsky.app URLs are display metadata. Validate recovery AT URIs against the saved DID.
+- app.bsky.feed.post permits 300 graphemes and 3000 UTF-8 bytes. Shorten body words without slicing grapheme clusters, protected links or required hashtags. Facet offsets are UTF-8 byte offsets.
+- Fetch one image through shared source-scoped media security, enforce the official 2,000,000-byte limit before uploadBlob, validate MIME signatures and the returned blob reference. Use rendered alt text; omit dimensions when transformation makes them uncertain.
+- Commit bluesky_blob before uploadBlob and bluesky_post before createRecord. Never blindly retry either POST; uncertain outcomes stay active until manual recovery. A blob alone is not a visible post.
+- Errors never echo API bodies, passwords, access/refresh JWTs or raw transport exceptions. Secrets must not reach source/media hosts, templates, URLs, logs or SQLite.

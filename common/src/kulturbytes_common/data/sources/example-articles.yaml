@@ -1,0 +1,12 @@
+name: example-articles
+adapter: json
+request:
+  url: https://content.example.org/articles
+  method: GET
+root: items
+mode: collection
+fields:
+  id: slug
+  title: headline
+  text: body
+  link: url

@@ -1,0 +1,17 @@
+name: example-places
+adapter: json
+list:
+  url: https://content.example.org/places
+  root: places
+  mode: collection
+detail:
+  url: https://content.example.org/places/{id}
+  root: data
+  mode: object
+media:
+  allowed_hosts: [images.example.org]
+fields:
+  id: id
+  title: name
+  city: city
+  image_url: image

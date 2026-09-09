@@ -1,72 +1,4 @@
-from datetime import date
-
 import click
-
-
-def format_event_list_item(
-    event: dict,
-) -> str:
-    start_date = event.get(
-        "start_date",
-        "",
-    )
-
-    start_time = (
-        event.get("start_time")
-        or ""
-    )
-
-    title = event.get(
-        "title",
-        "<ohne Titel>",
-    )
-
-    venue = event.get(
-        "venue_name"
-    )
-
-    city = event.get(
-        "venue_city"
-    )
-
-    try:
-        parsed_date = date.fromisoformat(
-            start_date
-        )
-
-        formatted_date = (
-            parsed_date.strftime(
-                "%d.%m.%Y"
-            )
-        )
-
-    except ValueError:
-        formatted_date = start_date
-
-    result = (
-        f"{formatted_date}"
-    )
-
-    if start_time:
-        result += (
-            f" {start_time}"
-        )
-
-    result += (
-        f" — {title}"
-    )
-
-    if venue:
-        result += (
-            f" — {venue}"
-        )
-
-    if city:
-        result += (
-            f" ({city})"
-        )
-
-    return result
 
 
 def parse_selection(
@@ -131,7 +63,7 @@ def parse_selection(
                 ):
                     raise click.ClickException(
                         (
-                            "Eventnummer außerhalb "
+                            "Eintragsnummer außerhalb "
                             f"des Bereichs: {number}"
                         )
                     )
@@ -157,7 +89,7 @@ def parse_selection(
             ):
                 raise click.ClickException(
                     (
-                        "Eventnummer außerhalb "
+                        "Eintragsnummer außerhalb "
                         f"des Bereichs: {number}"
                     )
                 )
@@ -169,69 +101,3 @@ def parse_selection(
     return sorted(
         result
     )
-
-
-def select_events(
-    events: list[dict],
-) -> list[dict]:
-    if not events:
-        click.secho(
-            "Keine unveröffentlichten zukünftigen "
-            "Events gefunden.",
-            fg="yellow",
-        )
-
-        return []
-
-    click.echo()
-    click.secho(
-        "Verfügbare Veranstaltungen",
-        bold=True,
-    )
-    click.echo()
-
-    for index, event in enumerate(
-        events,
-        start=1,
-    ):
-        click.echo(
-            f"[{index:>3}] "
-            f"{format_event_list_item(event)}"
-        )
-
-    click.echo()
-    click.echo(
-        "Du kannst beispielsweise auswählen:"
-    )
-    click.echo(
-        "  2        → nur Event 2"
-    )
-    click.echo(
-        "  1,4,7    → Events 1, 4 und 7"
-    )
-    click.echo(
-        "  3-6      → Events 3 bis 6"
-    )
-    click.echo(
-        "  1,3-5,9  → Kombination"
-    )
-    click.echo(
-        "  all      → alle angezeigten Events"
-    )
-    click.echo()
-
-    selection = click.prompt(
-        "Welche Events möchtest du auswählen?",
-        default="",
-        show_default=False,
-    )
-
-    indices = parse_selection(
-        selection,
-        len(events),
-    )
-
-    return [
-        events[index]
-        for index in indices
-    ]

@@ -1,0 +1,17 @@
+name: example-simple
+adapter: json
+endpoint: https://example.org/api/events
+root: events
+fields:
+  id: id
+  title: name
+  text: description
+  city: city
+  date: date
+  image_url: picture
+  tags: tags
+mode: collection
+media:
+  allowed_hosts: [images.example.org]
+behavior:
+  skip_past: true

@@ -1,0 +1,33 @@
+{{ title }}
+{% if subtitle %}
+{{ subtitle }}
+{% endif %}
+{% if date %}
+🗓 {{ date | dateformat }}{{ ' · ' ~ time[:5] ~ ' Uhr' if time else '' }}{{ ' – ' ~ (end_date | dateformat) if end_date and end_date != date else '' }}
+{% endif %}
+{% if location or city %}
+📍 {{ location or '' }}{{ ', ' if location and city and (city | lower) != (location | lower) else '' }}{{ city if city and (city | lower) != ((location or '') | lower) else '' }}
+{% endif %}
+{% if text %}
+
+{{ text }}
+{% endif %}
+{% set social_tags = tags | hashtags(city=city) %}
+{% if price or ticket_link or organizer or link or social_tags %}
+
+{% endif %}
+{% if price %}
+{{ price }}
+{% endif %}
+{% if ticket_link %}
+🎟 {{ ticket_link }}
+{% endif %}
+{% if organizer %}
+Veranstalter: {{ organizer }}
+{% endif %}
+{% if link %}
+👉 {{ link }}
+{% endif %}
+{% if social_tags %}
+{{ social_tags }}
+{% endif %}

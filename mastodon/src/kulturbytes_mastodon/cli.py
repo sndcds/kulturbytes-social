@@ -1,27 +1,24 @@
-#!/usr/bin/env python3
+from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
+from functools import partial
+from kulturbytes_common import storage
+from kulturbytes_common.sources.models import ContentItem, RenderedPost
+from kulturbytes_common.rendering import render_post, trim_summary as trim_summary
+from kulturbytes_common.media import download_post_image as download_image
 
-import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from datetime import date
 from urllib.parse import urlsplit
 
 import click
 import httpx
 from kulturbytes_common.auth import remote_identifier, remote_url
-from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
+from kulturbytes_common.publications import execute_publication, begin_remote_mutation
 from kulturbytes_common.http import safe_get
 
 from kulturbytes_common.auth import check_auth_request, redact, response_payload
 from kulturbytes_common.credentials import MASTODON, credential_options, resolve_credential
-from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import get_config
-from kulturbytes_common.events import (
-    build_hashtags, format_price, get_event_url, get_start_datetime,
-)
-from kulturbytes_common.formatting import strip_markdown
-from kulturbytes_common.media import download_image, get_image_url
 from kulturbytes_common.workflow import run_publisher
 
 
@@ -71,71 +68,10 @@ DATABASE_PATH = None  # Optional in-process override; resolve configuration lazi
 
 
 def init_database() -> sqlite3.Connection:
-    conn = open_database(DATABASE_PATH or get_database_path("mastodon"), "mastodon")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS published_events (
-            date_uuid TEXT PRIMARY KEY,
-            event_uuid TEXT NOT NULL,
-            mastodon_status_id TEXT NOT NULL,
-            mastodon_status_url TEXT,
-            title TEXT NOT NULL,
-            start_date TEXT NOT NULL,
-            start_time TEXT,
-            published_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-
-    init_journal(conn)
-    conn.commit()
-    return conn
+    return storage.init_database('mastodon', DATABASE_PATH)
 
 
-def remember_post(
-    conn: sqlite3.Connection,
-    event: dict,
-    mastodon_status_id: str,
-    mastodon_status_url: str | None,
-    *, commit: bool = True,
-) -> None:
-    event_date = event["date"]
-
-    conn.execute(
-        """
-        INSERT INTO published_events (
-            date_uuid,
-            event_uuid,
-            mastodon_status_id,
-            mastodon_status_url,
-            title,
-            start_date,
-            start_time
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(date_uuid) DO UPDATE SET
-            event_uuid = excluded.event_uuid,
-            mastodon_status_id = excluded.mastodon_status_id,
-            mastodon_status_url = excluded.mastodon_status_url,
-            title = excluded.title,
-            start_date = excluded.start_date,
-            start_time = excluded.start_time,
-            published_at = CURRENT_TIMESTAMP
-        """,
-        (
-            event_date["uuid"],
-            event["uuid"],
-            mastodon_status_id,
-            mastodon_status_url,
-            event["title"],
-            event_date["start_date"],
-            event_date.get("start_time"),
-        ),
-    )
-
-    if commit:
-        conn.commit()
+remember_post = partial(storage.remember_post, platform='mastodon')
 
 
 DEFAULT_STATUS_LIMIT = 500
@@ -157,87 +93,19 @@ def get_status_limit(client: httpx.Client, base_url: str) -> int:
     return DEFAULT_STATUS_LIMIT
 
 
-def trim_summary(summary: str, available: int) -> str:
-    """Keep complete whitespace-delimited words; never slice a word or URL."""
-    if len(summary) <= available:
-        return summary
-    end = 0
-    for word in re.finditer(r"\S+", summary):
-        if word.end() + 1 > available:
-            break
-        end = word.end()
-    return summary[:end] + "…" if end else ""
 
 
-def build_mastodon_message(event: dict, max_length: int = DEFAULT_STATUS_LIMIT) -> str:
-    event_date = event["date"]
-    start = get_start_datetime(event)
-    header = [f"📅 {strip_markdown(event.get('title') or '')}"]
-    date_line = f"🗓 {start:%d.%m.%Y} · {start:%H:%M} Uhr"
-    end_date = event_date.get("end_date")
-    if end_date and end_date != event_date["start_date"]:
-        date_line += f" – {date.fromisoformat(end_date):%d.%m.%Y}"
-    header.append(date_line)
-    venue = strip_markdown(event_date.get("venue_name") or "")
-    city = strip_markdown(event_date.get("venue_city") or "")
-    location = [venue] if venue else []
-    if city and city.casefold() != venue.casefold():
-        location.append(city)
-    if location:
-        header.append("📍 " + ", ".join(location))
-    footer = [f"👉 {get_event_url(event)}", build_hashtags(event)]
 
-    def compose() -> str:
-        return "\n".join(header) + "\n\n" + "\n".join(footer)
-
-    if len(compose()) > max_length:
-        raise click.ClickException(
-            "Mastodon-Text ist bereits ohne Beschreibung länger als das "
-            f"Instanzlimit von {max_length} Zeichen. Veröffentlichung wurde abgebrochen."
-        )
-
-    # Keep all required metadata and hashtags. Optional priority: subtitle,
-    # price, ticket URL, organizer, then summary. Drop metadata only as a whole.
-    subtitle = strip_markdown(event.get("subtitle") or "")
-    price = format_price(event)
-    ticket = event_date.get("ticket_link")
-    organizer = strip_markdown(event.get("org_name") or "")
-    for value, target in [(subtitle, header), (price, footer),
-                          (f"🎟 {ticket}" if ticket else "", footer),
-                          (f"Veranstalter: {organizer}" if organizer else "", footer)]:
-        if value and len(compose()) + len(value) + 1 <= max_length:
-            # Subtitle follows title; optional footer metadata precedes the link.
-            index = 1 if target is header else len(footer) - 2
-            target.insert(index, value)
-
-    summary = strip_markdown(event.get("summary") or event.get("description") or "")
-    summary = trim_summary(summary, max_length - len(compose()) - 2)
-    if summary:
-        return "\n".join(header) + "\n\n" + summary + "\n\n" + "\n".join(footer)
-    return compose()
+def build_mastodon_message(event: ContentItem, max_length: int = DEFAULT_STATUS_LIMIT) -> str:
+    return render_post(event, 'mastodon', max_length=max_length).text
 
 
-def get_image_alt_text(
-    event: dict,
-) -> str:
-    main_image = (
-        event.get("images", {})
-        .get("main", {})
-    )
-
-    alt = main_image.get("alt")
-
-    if alt:
-        return alt.strip()
-
-    return (
-        f"Veranstaltungsbild zu "
-        f"{event['title']}"
-    )
+def get_image_alt_text(event: ContentItem | RenderedPost) -> str:
+    return event.image_alt or f'Bild zu {getattr(event, "title", "")}'
 
 
 def print_event_preview(
-    event: dict,
+    event: ContentItem,
     message: str,
     max_length: int,
 ) -> None:
@@ -251,9 +119,7 @@ def print_event_preview(
         f"Zeichen: {len(message)}/{max_length}"
     )
 
-    image_url = get_image_url(
-        event
-    )
+    image_url = event.image_url
 
     if image_url:
         click.echo()
@@ -310,7 +176,7 @@ def wait_for_media(
 
 def upload_mastodon_media(
     client: httpx.Client,
-    event: dict,
+    event: ContentItem | RenderedPost,
     *, config: MastodonConfig | None = None,
 ) -> str:
     config = config or load_config()
@@ -368,17 +234,17 @@ def upload_mastodon_media(
 
 def publish_mastodon_status(
     client: httpx.Client,
-    event: dict,
+    event: ContentItem | RenderedPost,
     *,
     message: str | None = None,
     config: MastodonConfig | None = None,
 ) -> tuple[str, str | None]:
     config = config or load_config()
     if message is None:
-        message = build_mastodon_message(event)
+        message = event.text if isinstance(event, RenderedPost) else build_mastodon_message(event)
     media_id = None
 
-    if get_image_url(event):
+    if event.image_url:
         media_id = upload_mastodon_media(client, event, config=config)
         wait_for_media(client, media_id, config=config)
 
@@ -416,14 +282,15 @@ def publish_mastodon_status(
 def publish_event(
     client: httpx.Client,
     conn: sqlite3.Connection,
-    event: dict,
+    event: ContentItem,
     dry_run: bool,
     *,
     max_length: int = DEFAULT_STATUS_LIMIT,
     config: MastodonConfig | None = None,
     allow_repeat: bool = False,
 ) -> bool:
-    message = build_mastodon_message(event, max_length=max_length)
+    post = render_post(event, 'mastodon', max_length=max_length)
+    message = post.text
     print_event_preview(event, message, max_length)
 
     if dry_run:
@@ -435,7 +302,7 @@ def publish_event(
         return False
 
     if not click.confirm(
-        "Diesen Termin jetzt auf Mastodon veröffentlichen?",
+        "Diesen Inhalt jetzt auf Mastodon veröffentlichen?",
         default=False,
     ):
         click.echo(
@@ -447,19 +314,21 @@ def publish_event(
     config = config or load_config()
     mastodon_status_id, mastodon_status_url = execute_publication(
         conn, "mastodon", event,
-        lambda: publish_mastodon_status(client, event, message=message, config=config),
+        lambda: publish_mastodon_status(client, post, message=message, config=config),
         lambda remote_id, remote_url: remember_post(conn, event, remote_id, remote_url, commit=False), allow_repeat=allow_repeat,
         message=message, target_ref=config.base_url,
     )
     click.secho(f"Mastodon-Post erstellt: {mastodon_status_id}", fg="green")
-    click.echo(f"Gespeichert: {event['date']['uuid']} -> {mastodon_status_id}")
+    click.echo(f"Gespeichert: {storage.item_key(event)} -> {mastodon_status_id}")
     if mastodon_status_url:
         click.echo(mastodon_status_url)
 
     return True
 
 
-@click.command("mastodon", help="Kulturbytes-Termine für Mastodon auswählen, prüfen und veröffentlichen.")
+@click.command("mastodon", help="Inhalte für Mastodon auswählen, prüfen und veröffentlichen.")
+@click.option("--source", default=DEFAULT_SOURCE, show_default=True, help="Konfigurierte JSON-Quelle.")
+@click.option("--item-id", default=None, help="Quellenneutrale ID für die direkte Auswahl.")
 @credential_options("Mastodon")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
 @click.option(
@@ -478,7 +347,7 @@ def publish_event(
     default=50,
     show_default=True,
     help=(
-        "Maximale Anzahl Events in der Auswahl. "
+        "Maximale Anzahl Einträge in der Auswahl. "
         "0 zeigt alle."
     ),
 )
@@ -486,7 +355,7 @@ def publish_event(
     "--include-published",
     is_flag=True,
     help=(
-        "Auch bereits veröffentlichte Events "
+        "Auch bereits veröffentlichte Inhalte "
         "in der Auswahl anzeigen."
     ),
 )
@@ -503,13 +372,13 @@ def publish_event(
     "--event-uuid",
     type=str,
     default=None,
-    help="Event-UUID für die direkte Auswahl eines einzelnen Termins.",
+    help="Kulturbytes-Kompatibilität: Event-UUID; benötigt --date-identifier.",
 )
 @click.option(
     "--date-identifier",
     type=str,
     default=None,
-    help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
+    help="Kulturbytes-Kompatibilität: Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
 def mastodon_command(
     check_auth_only: bool,
@@ -518,8 +387,7 @@ def mastodon_command(
     include_published: bool,
     city: str | None,
     event_uuid: str | None,
-    date_identifier: str | None,
-) -> None:
+    date_identifier: str | None, source: str = DEFAULT_SOURCE, item_id: str | None = None) -> None:
     if check_auth_only:
         check_auth(load_config())
         return
@@ -528,21 +396,21 @@ def mastodon_command(
     status_limit: int | None = None
 
     def publish_with_instance_limit(
-        client: httpx.Client, conn: sqlite3.Connection, event: dict, dry_run: bool,
+        client: httpx.Client, conn: sqlite3.Connection, event: ContentItem, dry_run: bool,
     ) -> bool:
         nonlocal status_limit
         if status_limit is None:
             status_limit = get_status_limit(client, base_url)
         return publish_event(client, conn, event, dry_run=dry_run, max_length=status_limit, config=config, allow_repeat=include_published)
 
+    adapter, target = prepare_source(source, legacy_selector=(event_uuid, date_identifier), item_id=item_id)
     run_publisher(
         conn=init_database(),
-        publish_event=publish_with_instance_limit,
+        publish_item=publish_with_instance_limit,
         user_agent="Kulturbytes-Mastodon-Publisher/1.0",
         dry_run=dry_run,
         limit=limit,
         include_published=include_published,
         city=city,
-        event_uuid=event_uuid,
-        date_identifier=date_identifier,
+        adapter=adapter, target=target,
     )

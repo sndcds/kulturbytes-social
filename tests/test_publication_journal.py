@@ -1,3 +1,4 @@
+from canonical_support import canonical
 from copy import deepcopy
 import importlib
 import sqlite3
@@ -159,12 +160,12 @@ class JournalTests(IsolatedEnvironmentTestCase):
                     return ('123', 'https://example.test/123') if module is MASTODON else '123'
                 with patch.object(module, helper, side_effect=remote) as call, patch('click.confirm', return_value=False), \
                      patch.object(INSTAGRAM, 'validate_image', return_value='https://api.kulturbytes.de/image.jpg'):
-                    module.publish_event(Mock(), conn, EVENT, dry_run=True)
-                    module.publish_event(Mock(), conn, EVENT, dry_run=False)
+                    module.publish_event(Mock(), conn, canonical(EVENT), dry_run=True)
+                    module.publish_event(Mock(), conn, canonical(EVENT), dry_run=False)
                     call.assert_not_called()
                     self.assertEqual(list_attempts(conn), [])
                     with patch('click.confirm', return_value=True):
-                        module.publish_event(Mock(), conn, EVENT, dry_run=False, config=Mock(page_id="123", user_id="123", base_url="https://example.test"))
+                        module.publish_event(Mock(), conn, canonical(EVENT), dry_run=False, config=Mock(page_id="123", user_id="123", base_url="https://example.test"))
                     call.assert_called_once()
                     self.assertEqual(list_attempts(conn)[0]['state'], 'published')
 
@@ -199,10 +200,10 @@ class JournalTests(IsolatedEnvironmentTestCase):
                         event['images'] = {'main': {'url': 'https://api.kulturbytes.de/image.jpg'}}
                     with httpx.Client(transport=httpx.MockTransport(respond)) as client, patch('click.confirm', return_value=True):
                         if result_kind == 'success':
-                            module.publish_event(client, conn, event, False, config=config)
+                            module.publish_event(client, conn, canonical(event), False, config=config)
                         else:
                             with self.assertRaises(click.ClickException) as error:
-                                module.publish_event(client, conn, event, False, config=config)
+                                module.publish_event(client, conn, canonical(event), False, config=config)
                             self.assertNotIn('test-secret', str(error.exception))
                     self.assertEqual(len(posts), 2 if module is INSTAGRAM and result_kind == 'success' else 1)
                     state = list_attempts(conn)[0]['state']
@@ -332,17 +333,17 @@ class JournalTests(IsolatedEnvironmentTestCase):
                     self.assertEqual(row['state'], 'publishing')
                     stages.append(stage)
                     if module is FACEBOOK:
-                        message = FACEBOOK.build_message(event)
+                        message = FACEBOOK.build_message(canonical(event))
                         if with_image:
                             self.assertIn(message.encode(), request.content)
                         else:
                             self.assertEqual(parse_qs(request.content.decode())['message'][0], message)
                     elif module is MASTODON:
-                        message = MASTODON.build_mastodon_message(event)
+                        message = MASTODON.build_mastodon_message(canonical(event))
                         if stage == 'mastodon_status':
                             self.assertEqual(parse_qs(request.content.decode())['status'][0], message)
                     else:
-                        message = INSTAGRAM.build_instagram_caption(event)
+                        message = INSTAGRAM.build_instagram_caption(canonical(event))
                         if stage == 'instagram_container':
                             self.assertEqual(parse_qs(request.content.decode())['caption'][0], message)
                     self.assertEqual(row['content_sha256'], content_fingerprint(platform, event, message))
@@ -353,7 +354,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                      httpx.Client(transport=httpx.MockTransport(respond)) as client, patch('click.confirm', return_value=True):
                     conn = module.init_database()
                     self.addCleanup(conn.close)
-                    module.publish_event(client, conn, event, False, config=config)
+                    module.publish_event(client, conn, canonical(event), False, config=config)
                     expected = {'facebook': ['facebook_photo' if with_image else 'facebook_feed'],
                                 'mastodon': (['mastodon_media'] if with_image else []) + ['mastodon_status'],
                                 'instagram': ['instagram_container', 'instagram_publish']}[platform]
@@ -383,7 +384,7 @@ class JournalTests(IsolatedEnvironmentTestCase):
                 conn = INSTAGRAM.init_database()
                 self.addCleanup(conn.close)
                 with self.assertRaises(click.ClickException) as error:
-                    INSTAGRAM.publish_event(client, conn, event, False, config=config)
+                    INSTAGRAM.publish_event(client, conn, canonical(event), False, config=config)
                 row = list_attempts(conn)[0]
                 self.assertEqual((row['state'], row['mutation_stage']), ('publishing', 'instagram_publish'))
                 self.assertIsNotNone(row['error_class'])

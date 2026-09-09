@@ -8,6 +8,9 @@ import httpx
 from dotenv_support import IsolatedEnvironmentTestCase
 from kulturbytes_common.media_security import validate_media_url, media_response, create_media_client
 
+from kulturbytes_common.network import MediaPolicy
+POLICY = MediaPolicy(allowed_hosts=['api.kulturbytes.de'])
+
 REAL_MEDIA_CLIENT = create_media_client
 
 
@@ -18,25 +21,25 @@ class MediaSecurityTests(IsolatedEnvironmentTestCase):
                '[ff02::1]', '[::ffff:127.0.0.1]', 'user:password@example.test']
         for host in bad:
             with self.subTest(host=host), self.assertRaises(click.ClickException):
-                validate_media_url('https://'+host+'/image.jpg')
+                validate_media_url('https://'+host+'/image.jpg', POLICY)
         for url in ('http://example.test/image', 'file:///image', 'https://example.test:bad/image'):
             with self.assertRaises(click.ClickException):
-                validate_media_url(url)
+                validate_media_url(url, POLICY)
         with self.assertRaises(click.ClickException):
-            validate_media_url('https://8.8.8.8/image')
-        validate_media_url('https://api.kulturbytes.de/image')
+            validate_media_url('https://8.8.8.8/image', POLICY)
+        validate_media_url('https://api.kulturbytes.de/image', POLICY)
 
     def test_dns_mixed_private_and_recheck_each_retry(self):
         def records(*ips):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (ip, 443)) for ip in ips]
         for ips in [('10.0.0.1',), ('8.8.8.8', '127.0.0.1')]:
             with patch('socket.getaddrinfo', return_value=records(*ips)), self.assertRaises(click.ClickException):
-                validate_media_url('https://api.kulturbytes.de/image')
+                validate_media_url('https://api.kulturbytes.de/image', POLICY)
         calls = []
         with patch('socket.getaddrinfo', side_effect=[records('8.8.8.8'), records('127.0.0.1')]), \
              httpx.Client(transport=httpx.MockTransport(lambda r: (calls.append(r), httpx.Response(503))[1])) as client:
             with self.assertRaises(click.ClickException):
-                with media_response(client, 'https://api.kulturbytes.de/image'):
+                with media_response(client, 'https://api.kulturbytes.de/image', POLICY):
                     pass
         self.assertEqual(len(calls), 1)
 
@@ -44,19 +47,19 @@ class MediaSecurityTests(IsolatedEnvironmentTestCase):
         for location in ('https://127.0.0.1/image', '/start', '', 'https://user:pass@example.test/x', 'https://[bad'):
             with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(302, headers={'Location': location}))) as client:
                 with self.assertRaises(click.ClickException):
-                    with media_response(client, 'https://api.kulturbytes.de/start'):
+                    with media_response(client, 'https://api.kulturbytes.de/start', POLICY):
                         pass
         calls = []
         def safe(request):
             calls.append(request)
             return httpx.Response(302, headers={'Location': '/finish'}) if request.url.path == '/start' else httpx.Response(200, content=b'image')
         with httpx.Client(transport=httpx.MockTransport(safe)) as client:
-            with media_response(client, 'https://api.kulturbytes.de/start') as response:
+            with media_response(client, 'https://api.kulturbytes.de/start', POLICY) as response:
                 self.assertEqual(response.read(), b'image')
         self.assertEqual(len(calls), 2)
         with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(302, headers={'Location': str(r.url)+'x'}))) as client:
             with self.assertRaises(click.ClickException):
-                with media_response(client, 'https://api.kulturbytes.de/start'):
+                with media_response(client, 'https://api.kulturbytes.de/start', POLICY):
                     pass
 
     def test_rebinding_cannot_change_tcp_destination_and_proxies_are_ignored(self):
@@ -95,7 +98,7 @@ class MediaSecurityTests(IsolatedEnvironmentTestCase):
              patch('httpcore._backends.sync.SyncBackend.connect_tcp', new=connect_tcp), \
              patch('kulturbytes_common.media_security.create_media_client', side_effect=REAL_MEDIA_CLIENT), \
              httpx.Client(trust_env=False, headers={'Authorization': 'Bearer test-secret'}) as parent:
-            with media_response(parent, 'https://api.kulturbytes.de/api/image/example') as response:
+            with media_response(parent, 'https://api.kulturbytes.de/api/image/example', POLICY) as response:
                 self.assertEqual(response.read(), b'jpeg')
                 self.assertEqual(response.url.host, 'api.kulturbytes.de')
         self.assertEqual(dns_calls, ['api.kulturbytes.de'])
@@ -109,9 +112,9 @@ class MediaSecurityTests(IsolatedEnvironmentTestCase):
                     'https://api.kulturbytes.de:444/image', 'https://user:pass@api.kulturbytes.de/image',
                     'https://@api.kulturbytes.de/image'):
             with self.subTest(url=url), patch('socket.getaddrinfo') as resolver, self.assertRaises(click.ClickException):
-                validate_media_url(url)
+                validate_media_url(url, POLICY)
             resolver.assert_not_called()
         for addresses in (['::1'], ['fc00::1'], ['8.8.8.8', 'fe80::1']):
             with patch('socket.getaddrinfo', return_value=[(socket.AF_INET6, socket.SOCK_STREAM, 6, '', (ip, 443)) for ip in addresses]):
                 with self.assertRaises(click.ClickException):
-                    validate_media_url('https://api.kulturbytes.de/image')
+                    validate_media_url('https://api.kulturbytes.de/image', POLICY)

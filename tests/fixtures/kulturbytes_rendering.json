@@ -1,0 +1,112 @@
+[
+  {
+    "name": "basic",
+    "event": {
+      "uuid": "event-1",
+      "title": "Kulturabend",
+      "summary": "Musik und Kultur.",
+      "tags": [
+        "Kultur",
+        "kultur",
+        "Schleswig-Holstein"
+      ],
+      "date": {
+        "uuid": "date-1",
+        "slug": "209901011830",
+        "start_date": "2099-01-01",
+        "start_time": "18:30",
+        "venue_name": "Kulturhaus",
+        "venue_city": "Flensburg",
+        "venue_street": "Hauptstraße",
+        "venue_house_number": "1",
+        "venue_postal_code": "24937",
+        "price_type": "free"
+      }
+    },
+    "facebook": "📅 Kulturabend\n\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\n\nMusik und Kultur.\n\nEintritt frei\n\n👉 Mehr Informationen: https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg",
+    "instagram": "📅 Kulturabend\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\nEintritt frei\n\nMusik und Kultur.\n\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kulturbytes #Flensburg #Kultur #SchleswigHolstein",
+    "mastodon": "📅 Kulturabend\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus, Flensburg\n\nMusik und Kultur.\n\nEintritt frei\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg"
+  },
+  {
+    "name": "complete",
+    "event": {
+      "uuid": "event-1",
+      "title": "Kulturabend",
+      "summary": "**Musik** und [Kultur](https://example.org).",
+      "tags": [
+        "Kultur",
+        "kultur",
+        "Schleswig-Holstein"
+      ],
+      "date": {
+        "uuid": "date-1",
+        "slug": "209901011830",
+        "start_date": "2099-01-01",
+        "start_time": "18:30",
+        "venue_name": "Kulturhaus",
+        "venue_city": "Flensburg",
+        "venue_street": "Hauptstraße",
+        "venue_house_number": "1",
+        "venue_postal_code": "24937",
+        "price_type": "free",
+        "end_date": "2099-01-02",
+        "ticket_link": "https://example.org/tickets"
+      },
+      "subtitle": "Ein besonderer Abend",
+      "org_name": "Kulturverein",
+      "images": {
+        "main": {
+          "uuid": "image-1",
+          "url": "https://api.kulturbytes.de/api/image/image-1",
+          "alt": "Bühne und Publikum"
+        }
+      }
+    },
+    "facebook": "📅 Kulturabend\n\nEin besonderer Abend\n\n🗓 01.01.2099 · 18:30 Uhr\nbis 02.01.2099\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\n\n**Musik** und [Kultur](https://example.org).\n\nVeranstalter: Kulturverein\n\nEintritt frei\n\n🎟 Tickets: https://example.org/tickets\n\n👉 Mehr Informationen: https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg",
+    "instagram": "📅 Kulturabend\nEin besonderer Abend\n🗓 01.01.2099 · 18:30 Uhr\nbis 02.01.2099\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\nEintritt frei\nVeranstalter: Kulturverein\n🎟 https://example.org/tickets\n\nMusik und Kultur: https://example.org.\n\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kulturbytes #Flensburg #Kultur #SchleswigHolstein",
+    "mastodon": "📅 Kulturabend\nEin besonderer Abend\n🗓 01.01.2099 · 18:30 Uhr – 02.01.2099\n📍 Kulturhaus, Flensburg\n\nMusik und Kultur: https://example.org.\n\nEintritt frei\n🎟 https://example.org/tickets\nVeranstalter: Kulturverein\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg"
+  },
+  {
+    "name": "long",
+    "event": {
+      "uuid": "event-1",
+      "title": "Kulturabend",
+      "summary": "Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. ",
+      "tags": [
+        "Kultur",
+        "kultur",
+        "Schleswig-Holstein"
+      ],
+      "date": {
+        "uuid": "date-1",
+        "slug": "209901011830",
+        "start_date": "2099-01-01",
+        "start_time": "18:30",
+        "venue_name": "Kulturhaus",
+        "venue_city": "Flensburg",
+        "venue_street": "Hauptstraße",
+        "venue_house_number": "1",
+        "venue_postal_code": "24937",
+        "price_type": "free"
+      }
+    },
+    "facebook": "📅 Kulturabend\n\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\n\nMusik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend.\n\nEintritt frei\n\n👉 Mehr Informationen: https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg",
+    "instagram": "📅 Kulturabend\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus\nHauptstraße 1, 24937 Flensburg\nEintritt frei\n\nMusik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultu…\n\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kulturbytes #Flensburg #Kultur #SchleswigHolstein",
+    "mastodon": "📅 Kulturabend\n🗓 01.01.2099 · 18:30 Uhr\n📍 Kulturhaus, Flensburg\n\nMusik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und Kultur am Abend. Musik und…\n\nEintritt frei\n👉 https://kulturbytes.de/de/veranstaltung/event-1/209901011830\n#Kultur #SchleswigHolstein #Kulturbytes #Flensburg"
+  },
+  {
+    "name": "minimal",
+    "event": {
+      "uuid": "event-1",
+      "title": "Minimal",
+      "date": {
+        "uuid": "date-1",
+        "slug": "20990101",
+        "start_date": "2099-01-01"
+      }
+    },
+    "facebook": "📅 Minimal\n\n🗓 01.01.2099 · 00:00 Uhr\n\n👉 Mehr Informationen: https://kulturbytes.de/de/veranstaltung/event-1/20990101\n\n#Kulturbytes",
+    "instagram": "📅 Minimal\n🗓 01.01.2099 · 00:00 Uhr\n\n👉 https://kulturbytes.de/de/veranstaltung/event-1/20990101\n#Kulturbytes",
+    "mastodon": "📅 Minimal\n🗓 01.01.2099 · 00:00 Uhr\n\n👉 https://kulturbytes.de/de/veranstaltung/event-1/20990101\n#Kulturbytes"
+  }
+]

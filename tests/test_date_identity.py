@@ -105,7 +105,7 @@ class DateIdentityTests(IsolatedEnvironmentTestCase):
                 self.assertIn('Terminkonsistenzfehler', result.output)
                 self.assertEqual(len(requests), 3)
                 publish.assert_called_once()
-                self.assertEqual(publish.call_args.args[2]['date']['uuid'], 'date-1')
+                self.assertEqual(publish.call_args.args[2].id, 'date-1')
                 self.assertFalse(publish.call_args.kwargs['dry_run'])
 
     def test_matching_identity_reaches_platform_in_direct_mode(self):
@@ -118,7 +118,9 @@ class DateIdentityTests(IsolatedEnvironmentTestCase):
                     )
                     self.assertEqual(result.exit_code, 0, result.output)
                     publish.assert_called_once()
-                    self.assertEqual(publish.call_args.args[2]['date'], EVENT['date'])
+                    self.assertEqual(publish.call_args.args[2].id, EVENT['date']['uuid'])
+                    self.assertEqual(publish.call_args.args[2].date, EVENT['date']['start_date'])
+                    self.assertEqual(publish.call_args.args[2].location, EVENT['date']['venue_name'])
                     self.assertEqual(publish.call_args.kwargs['dry_run'], dry_run)
 
 

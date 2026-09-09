@@ -14,8 +14,8 @@ from click.testing import CliRunner
 from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
-from kulturbytes_common.events import build_address, build_hashtags, format_price
-from kulturbytes_common.media import download_image
+from kulturbytes_common.sources.kulturbytes_api import build_address, build_hashtags, format_price
+from kulturbytes_common.sources.kulturbytes_media import download_image
 from kulturbytes_common.selection import parse_selection
 
 ENV = {
@@ -137,7 +137,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                     self.assertTrue(already_published(conn, 'date-1'))
                     conn.close()
                 result, requests = self.run_cli(module, directory, [], '')
-                self.assertIn('0 Termine stehen zur Auswahl.', result.output)
+                self.assertIn('0 Einträge stehen zur Auswahl.', result.output)
                 self.assertEqual(len(requests), 1)
                 result, requests = self.run_cli(module, directory, ['--include-published'], '1\ny\n')
                 self.assertIn('wurde bereits veröffentlicht', result.output)
@@ -244,7 +244,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
         for module in [FACEBOOK, MASTODON]:
             with self.subTest(platform=module.__name__), tempfile.TemporaryDirectory() as directory:
                 result, _ = self.run_cli(module, directory, ['--city', 'flensburg', '--limit', '1'], '1\n', summaries)
-                self.assertIn('1 Termine stehen zur Auswahl.', result.output)
+                self.assertIn('1 Einträge stehen zur Auswahl.', result.output)
                 for title in ['Später', 'Vergangen', 'Entwurf', 'Andere Stadt']:
                     self.assertNotIn(title, result.output)
 
@@ -256,7 +256,7 @@ class PublisherTests(IsolatedEnvironmentTestCase):
                     summaries = [dict(SUMMARY, uuid='other-event'), SUMMARY]
                     result, requests = self.run_cli(module, directory, args, '', summaries)
                     self.assertIn('DRY RUN', result.output)
-                    self.assertNotIn('Welche Events', result.output)
+                    self.assertNotIn('Welche Inhalte', result.output)
                     self.assertEqual(len(requests), 2)
                     with sqlite3.connect(Path(directory) / 'posts.sqlite3') as conn:
                         self.assertFalse(already_published(conn, 'date-1'))

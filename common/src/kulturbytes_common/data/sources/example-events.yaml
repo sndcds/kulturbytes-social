@@ -1,0 +1,22 @@
+name: example-events
+adapter: json
+request:
+  url: https://content.example.org/events
+  method: GET
+  headers:
+    Accept: application/json
+  query:
+    limit: "100"
+root: events
+mode: collection
+behavior:
+  skip_past: true
+media:
+  allowed_hosts: [images.example.org]
+fields:
+  id: id
+  title: name
+  city: town
+  location: hall
+  date: start
+  image_url: picture

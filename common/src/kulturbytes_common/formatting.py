@@ -1,6 +1,7 @@
 """Normalization of social text without modifying API data."""
 
 import re
+import unicodedata
 
 
 def strip_markdown(text: str) -> str:
@@ -50,3 +51,38 @@ def strip_markdown(text: str) -> str:
     )
 
     return text.strip()
+
+
+def normalize_hashtag(
+    value: str,
+) -> str | None:
+    if not value:
+        return None
+
+    value = value.strip()
+
+    if not value:
+        return None
+
+    value = unicodedata.normalize(
+        "NFC",
+        value,
+    )
+
+    value = re.sub(
+        r"[\s\-_/]+",
+        "",
+        value,
+    )
+
+    value = re.sub(
+        r"[^\wÄÖÜäöüß]",
+        "",
+        value,
+        flags=re.UNICODE,
+    )
+
+    if not value:
+        return None
+
+    return f"#{value}"

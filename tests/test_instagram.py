@@ -1,3 +1,4 @@
+from canonical_support import canonical
 import click
 import os
 import sqlite3
@@ -14,7 +15,7 @@ from click.testing import CliRunner
 from kulturbytes_social.cli import cli
 
 from kulturbytes_common.database import already_published
-from kulturbytes_common.events import get_event_url
+from kulturbytes_common.sources.kulturbytes_api import get_event_url
 from kulturbytes_common.formatting import strip_markdown
 from kulturbytes_instagram import cli as instagram
 
@@ -114,7 +115,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
             with self.subTest(identifier=identifier):
                 result = self.run_cli(['--event-uuid', 'event-1', '--date-identifier', identifier], env={})
                 self.assertIn('DRY RUN', result.output)
-                self.assertNotIn('Welche Events', result.output)
+                self.assertNotIn('Welche Inhalte', result.output)
         self.assert_unpublished()
 
     def test_empty_summary_uses_detail_description(self):
@@ -218,7 +219,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
     def test_caption_limit_preserves_url_and_required_hashtags(self):
         event = deepcopy(EVENT)
         event['summary'] = '**Langer Text** ' * 1000
-        caption = instagram.build_instagram_caption(event)
+        caption = instagram.build_instagram_caption(canonical(event))
         self.assertLessEqual(len(caption), 2200)
         self.assertIn(get_event_url(event), caption)
         self.assertNotIn('**', caption)
@@ -228,7 +229,7 @@ class InstagramTests(IsolatedEnvironmentTestCase):
         self.assertIn('#Flensburg', hashtags)
         event['title'] = 'A' * 2300
         with self.assertRaises(click.ClickException):
-            instagram.build_instagram_caption(event)
+            instagram.build_instagram_caption(canonical(event))
 
     def test_shared_markdown_normalization(self):
         self.assertEqual(strip_markdown(r'**Text** 7\. September [Website](https://example.org)'),

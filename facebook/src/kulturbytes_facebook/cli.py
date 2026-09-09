@@ -1,24 +1,23 @@
-#!/usr/bin/env python3
+from kulturbytes_common.sources.cli import DEFAULT_SOURCE, prepare_source
+from functools import partial
+from kulturbytes_common import storage
+from kulturbytes_common.sources.models import ContentItem, RenderedPost
+from kulturbytes_common.rendering import render_post
+from kulturbytes_common.media import download_post_image as download_image
 
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import date
 
 import click
 import httpx
 from kulturbytes_common.auth import remote_identifier
-from kulturbytes_common.publications import init_journal, execute_publication, begin_remote_mutation
+from kulturbytes_common.publications import execute_publication, begin_remote_mutation
 
 from kulturbytes_common.auth import redact, response_payload
 from kulturbytes_facebook.auth import authenticate_page
 from kulturbytes_common.credentials import FACEBOOK_PAGE, credential_options, resolve_credential
-from kulturbytes_common.database import get_database_path, open_database
 from kulturbytes_common.environment import get_config
-from kulturbytes_common.events import (
-    build_address, build_hashtags, format_price, get_event_url, get_start_datetime,
-)
-from kulturbytes_common.media import download_image, get_image_url
 from kulturbytes_common.workflow import run_publisher
 
 
@@ -61,226 +60,18 @@ DATABASE_PATH = None  # Optional in-process override; resolve configuration lazi
 
 
 def init_database() -> sqlite3.Connection:
-    conn = open_database(DATABASE_PATH or get_database_path("facebook"), "facebook")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS published_events (
-            date_uuid TEXT PRIMARY KEY,
-            event_uuid TEXT NOT NULL,
-            facebook_post_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            start_date TEXT NOT NULL,
-            start_time TEXT,
-            published_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-
-    init_journal(conn)
-    conn.commit()
-    return conn
+    return storage.init_database('facebook', DATABASE_PATH)
 
 
-def remember_post(
-    conn: sqlite3.Connection,
-    event: dict,
-    facebook_post_id: str,
-    *, commit: bool = True,
-) -> None:
-    event_date = event["date"]
-
-    conn.execute(
-        """
-        INSERT INTO published_events (
-            date_uuid,
-            event_uuid,
-            facebook_post_id,
-            title,
-            start_date,
-            start_time
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(date_uuid) DO UPDATE SET
-            event_uuid = excluded.event_uuid,
-            facebook_post_id = excluded.facebook_post_id,
-            title = excluded.title,
-            start_date = excluded.start_date,
-            start_time = excluded.start_time,
-            published_at = CURRENT_TIMESTAMP
-        """,
-        (
-            event_date["uuid"],
-            event["uuid"],
-            facebook_post_id,
-            event["title"],
-            event_date["start_date"],
-            event_date.get("start_time"),
-        ),
-    )
-
-    if commit:
-        conn.commit()
+remember_post = partial(storage.remember_post, platform='facebook')
 
 
-def build_message(
-    event: dict,
-) -> str:
-    lines: list[str] = []
-
-    event_date = event["date"]
-
-    title = event["title"]
-
-    subtitle = event.get(
-        "subtitle"
-    )
-
-    description = (
-        event.get("summary")
-        or event.get("description")
-    )
-
-    start = get_start_datetime(
-        event
-    )
-
-    venue = event_date.get(
-        "venue_name"
-    )
-
-    address = build_address(
-        event
-    )
-
-    organization = event.get(
-        "org_name"
-    )
-
-    lines.append(
-        f"📅 {title}"
-    )
-
-    if subtitle:
-        lines.extend(
-            [
-                "",
-                subtitle.strip(),
-            ]
-        )
-
-    lines.extend(
-        [
-            "",
-            (
-                "🗓 "
-                f"{start.strftime('%d.%m.%Y')}"
-                " · "
-                f"{start.strftime('%H:%M')} Uhr"
-            ),
-        ]
-    )
-
-    end_date = event_date.get(
-        "end_date"
-    )
-
-    if (
-        end_date
-        and end_date
-        != event_date["start_date"]
-    ):
-        end = date.fromisoformat(
-            end_date
-        )
-
-        lines.append(
-            f"bis {end.strftime('%d.%m.%Y')}"
-        )
-
-    if venue:
-        lines.append(
-            f"📍 {venue}"
-        )
-
-    if address:
-        lines.append(
-            address
-        )
-
-    if description:
-        lines.extend(
-            [
-                "",
-                description.strip(),
-            ]
-        )
-
-    if organization:
-        lines.extend(
-            [
-                "",
-                (
-                    "Veranstalter: "
-                    f"{organization}"
-                ),
-            ]
-        )
-
-    price = format_price(
-        event
-    )
-
-    if price:
-        lines.extend(
-            [
-                "",
-                price,
-            ]
-        )
-
-    ticket_link = event_date.get(
-        "ticket_link"
-    )
-
-    if ticket_link:
-        lines.extend(
-            [
-                "",
-                (
-                    "🎟 Tickets: "
-                    f"{ticket_link}"
-                ),
-            ]
-        )
-
-    lines.extend(
-        [
-            "",
-            (
-                "👉 Mehr Informationen: "
-                f"{get_event_url(event)}"
-            ),
-        ]
-    )
-
-    hashtags = build_hashtags(
-        event
-    )
-
-    if hashtags:
-        lines.extend(
-            [
-                "",
-                hashtags,
-            ]
-        )
-
-    return "\n".join(lines)
+def build_message(event: ContentItem) -> str:
+    return render_post(event, 'facebook').text
 
 
 def print_event_preview(
-    event: dict, message: str | None = None,
+    event: ContentItem, message: str | None = None,
 ) -> None:
     click.echo()
     click.echo("=" * 80)
@@ -289,9 +80,7 @@ def print_event_preview(
         build_message(event) if message is None else message
     )
 
-    image_url = get_image_url(
-        event
-    )
+    image_url = event.image_url
 
     if image_url:
         click.echo()
@@ -304,7 +93,7 @@ def print_event_preview(
 
 def publish_facebook_photo(
     client: httpx.Client,
-    event: dict,
+    event: ContentItem | RenderedPost,
     *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
@@ -329,7 +118,7 @@ def publish_facebook_photo(
         headers={"Authorization": f"Bearer {config.access_token}"},
         follow_redirects=False,
         data={
-            "caption": build_message(event) if message is None else message,
+            "caption": event.text if isinstance(event, RenderedPost) else build_message(event) if message is None else message,
         },
         files={
             "source": (
@@ -359,7 +148,7 @@ def publish_facebook_photo(
 
 def publish_text_post(
     client: httpx.Client,
-    event: dict,
+    event: ContentItem | RenderedPost,
     *, config: FacebookConfig | None = None, message: str | None = None,
 ) -> str:
     config = config or load_config()
@@ -375,7 +164,7 @@ def publish_text_post(
         headers={"Authorization": f"Bearer {config.access_token}"},
         follow_redirects=False,
         data={
-            "message": build_message(event) if message is None else message,
+            "message": event.text if isinstance(event, RenderedPost) else build_message(event) if message is None else message,
         },
     )
 
@@ -398,11 +187,12 @@ def publish_text_post(
 def publish_event(
     client: httpx.Client,
     conn: sqlite3.Connection,
-    event: dict,
+    event: ContentItem,
     dry_run: bool,
     *, config: FacebookConfig | None = None, allow_repeat: bool = False,
 ) -> bool:
-    message = build_message(event)
+    post = render_post(event, 'facebook')
+    message = post.text
     print_event_preview(event, message)
 
     if dry_run:
@@ -414,7 +204,7 @@ def publish_event(
         return False
 
     if not click.confirm(
-        "Diesen Termin jetzt auf Facebook veröffentlichen?",
+        "Diesen Inhalt jetzt auf Facebook veröffentlichen?",
         default=False,
     ):
         click.echo(
@@ -426,8 +216,8 @@ def publish_event(
     config = config or load_config()
 
     def publish() -> tuple[str, None]:
-        publisher = publish_facebook_photo if get_image_url(event) else publish_text_post
-        return publisher(client, event, config=config, message=message), None
+        publisher = publish_facebook_photo if event.image_url else publish_text_post
+        return publisher(client, post, config=config, message=message), None
 
     facebook_post_id, _ = execute_publication(
         conn, "facebook", event, publish,
@@ -435,12 +225,14 @@ def publish_event(
         message=message, target_ref=config.page_id,
     )
     click.secho(f"Facebook-Post erstellt: {facebook_post_id}", fg="green")
-    click.echo(f"Gespeichert: {event['date']['uuid']} -> {facebook_post_id}")
+    click.echo(f"Gespeichert: {storage.item_key(event)} -> {facebook_post_id}")
 
     return True
 
 
-@click.command("facebook", help="Kulturbytes-Termine für Facebook auswählen, prüfen und veröffentlichen.")
+@click.command("facebook", help="Inhalte für Facebook auswählen, prüfen und veröffentlichen.")
+@click.option("--source", default=DEFAULT_SOURCE, show_default=True, help="Konfigurierte JSON-Quelle.")
+@click.option("--item-id", default=None, help="Quellenneutrale ID für die direkte Auswahl.")
 @credential_options("Facebook")
 @click.option("--resolve-page-token", is_flag=True, help="Veraltet: Legacy-Page-Token ableiten; mit Meta-Token identisch zu --check-auth.")
 @click.option("--check-auth", "check_auth_only", is_flag=True, help="Nur Zugang und Zielkonto prüfen; hat Vorrang vor Auswahl und Veröffentlichung.")
@@ -460,7 +252,7 @@ def publish_event(
     default=50,
     show_default=True,
     help=(
-        "Maximale Anzahl Events in der Auswahl. "
+        "Maximale Anzahl Einträge in der Auswahl. "
         "0 zeigt alle."
     ),
 )
@@ -468,7 +260,7 @@ def publish_event(
     "--include-published",
     is_flag=True,
     help=(
-        "Auch bereits veröffentlichte Events "
+        "Auch bereits veröffentlichte Inhalte "
         "in der Auswahl anzeigen."
     ),
 )
@@ -485,13 +277,13 @@ def publish_event(
     "--event-uuid",
     type=str,
     default=None,
-    help="Event-UUID für die direkte Auswahl eines einzelnen Termins.",
+    help="Kulturbytes-Kompatibilität: Event-UUID; benötigt --date-identifier.",
 )
 @click.option(
     "--date-identifier",
     type=str,
     default=None,
-    help="Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
+    help="Kulturbytes-Kompatibilität: Termin-Slug oder Termin-UUID; benötigt --event-uuid.",
 )
 def facebook_command(
     check_auth_only: bool,
@@ -501,14 +293,13 @@ def facebook_command(
     include_published: bool,
     city: str | None,
     event_uuid: str | None,
-    date_identifier: str | None,
-) -> None:
+    date_identifier: str | None, source: str = DEFAULT_SOURCE, item_id: str | None = None) -> None:
     if check_auth_only or resolve_page_token:
         authenticate(force=resolve_page_token)
         return
     config = authenticate() if not dry_run else None
 
-    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: dict, *, dry_run: bool) -> bool:
+    def publish_with_config(client: httpx.Client, conn: sqlite3.Connection, event: ContentItem, *, dry_run: bool) -> bool:
         try:
             return publish_event(client, conn, event, dry_run=dry_run, config=config, allow_repeat=include_published)
         except httpx.RequestError:
@@ -518,14 +309,14 @@ def facebook_command(
             for secret in config.secrets if config else ():
                 message = redact(message, secret)
             raise click.ClickException(message) from None
+    adapter, target = prepare_source(source, legacy_selector=(event_uuid, date_identifier), item_id=item_id)
     run_publisher(
         conn=init_database(),
-        publish_event=publish_with_config,
+        publish_item=publish_with_config,
         user_agent="Kulturbytes-Facebook-Publisher/1.2",
         dry_run=dry_run,
         limit=limit,
         include_published=include_published,
         city=city,
-        event_uuid=event_uuid,
-        date_identifier=date_identifier,
+        adapter=adapter, target=target,
     )

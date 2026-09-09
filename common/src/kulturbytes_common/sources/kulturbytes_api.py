@@ -1,12 +1,13 @@
-import re
-import unicodedata
 from datetime import date, datetime
-from .timezone import TIMEZONE, application_today
 
-import httpx
-from kulturbytes_common.http import safe_get
 import click
-from .models import validate_list, validate_detail
+import httpx
+
+from kulturbytes_common.http import safe_get
+
+from ..formatting import normalize_hashtag
+from ..timezone import TIMEZONE, application_today
+from .kulturbytes_models import validate_detail, validate_list
 
 KULTURBYTES_EVENTS_API = "https://api.kulturbytes.de/api/events"
 KULTURBYTES_EVENT_API = "https://api.kulturbytes.de/api/event"
@@ -14,9 +15,11 @@ KULTURBYTES_EVENT_API = "https://api.kulturbytes.de/api/event"
 
 def get_events(
     client: httpx.Client,
-    *, target: tuple[str, str] | None = None,
+    *,
+    target: tuple[str, str] | None = None,
 ) -> list[dict]:
-    response = safe_get(client,
+    response = safe_get(
+        client,
         KULTURBYTES_EVENTS_API,
     )
 
@@ -37,10 +40,7 @@ def get_event_details(
     event_uuid = event["uuid"]
     date_slug = event["date_slug"]
 
-    url = (
-        f"{KULTURBYTES_EVENT_API}/"
-        f"{event_uuid}/date/{date_slug}"
-    )
+    url = f"{KULTURBYTES_EVENT_API}/{event_uuid}/date/{date_slug}"
 
     response = safe_get(client, url)
     response.raise_for_status()
@@ -70,9 +70,7 @@ def should_publish(
     if not start_date:
         return False
 
-    event_date = date.fromisoformat(
-        start_date
-    )
+    event_date = date.fromisoformat(start_date)
 
     return event_date >= application_today()
 
@@ -83,11 +81,7 @@ def get_event_url(
     event_uuid = event["uuid"]
     date_slug = event["date"]["slug"]
 
-    return (
-        "https://kulturbytes.de/de/veranstaltung/"
-        f"{event_uuid}/"
-        f"{date_slug}"
-    )
+    return f"https://kulturbytes.de/de/veranstaltung/{event_uuid}/{date_slug}"
 
 
 def get_start_datetime(
@@ -97,18 +91,11 @@ def get_start_datetime(
 
     start_date = event_date["start_date"]
 
-    start_time = (
-        event_date.get("start_time")
-        or "00:00"
-    )
+    start_time = event_date.get("start_time") or "00:00"
 
-    value = datetime.fromisoformat(
-        f"{start_date}T{start_time}"
-    )
+    value = datetime.fromisoformat(f"{start_date}T{start_time}")
 
-    return value.replace(
-        tzinfo=TIMEZONE
-    )
+    return value.replace(tzinfo=TIMEZONE)
 
 
 def build_address(
@@ -118,31 +105,21 @@ def build_address(
 
     parts: list[str] = []
 
-    street = event_date.get(
-        "venue_street"
-    )
+    street = event_date.get("venue_street")
 
-    house_number = event_date.get(
-        "venue_house_number"
-    )
+    house_number = event_date.get("venue_house_number")
 
     if street:
         street_line = street.strip()
 
         if house_number:
-            street_line += (
-                f" {house_number.strip()}"
-            )
+            street_line += f" {house_number.strip()}"
 
         parts.append(street_line)
 
-    postal_code = event_date.get(
-        "venue_postal_code"
-    )
+    postal_code = event_date.get("venue_postal_code")
 
-    city = event_date.get(
-        "venue_city"
-    )
+    city = event_date.get("venue_city")
 
     city_line = " ".join(
         value.strip()
@@ -157,41 +134,6 @@ def build_address(
         parts.append(city_line)
 
     return ", ".join(parts)
-
-
-def normalize_hashtag(
-    value: str,
-) -> str | None:
-    if not value:
-        return None
-
-    value = value.strip()
-
-    if not value:
-        return None
-
-    value = unicodedata.normalize(
-        "NFC",
-        value,
-    )
-
-    value = re.sub(
-        r"[\s\-_/]+",
-        "",
-        value,
-    )
-
-    value = re.sub(
-        r"[^\wÄÖÜäöüß]",
-        "",
-        value,
-        flags=re.UNICODE,
-    )
-
-    if not value:
-        return None
-
-    return f"#{value}"
 
 
 def build_hashtags(
@@ -209,19 +151,12 @@ def build_hashtags(
 
     hashtags.append("#Kulturbytes")
 
-    city = (
-        event.get("date", {})
-        .get("venue_city")
-    )
+    city = event.get("date", {}).get("venue_city")
 
-    city_hashtag = normalize_hashtag(
-        city or ""
-    )
+    city_hashtag = normalize_hashtag(city or "")
 
     if city_hashtag:
-        hashtags.append(
-            city_hashtag
-        )
+        hashtags.append(city_hashtag)
 
     seen: set[str] = set()
     unique: list[str] = []
@@ -243,20 +178,14 @@ def format_price(
 ) -> str | None:
     event_date = event["date"]
 
-    price_type = event_date.get(
-        "price_type"
-    )
+    price_type = event_date.get("price_type")
 
     if price_type == "free":
         return "Eintritt frei"
 
-    min_price = event_date.get(
-        "min_price"
-    )
+    min_price = event_date.get("min_price")
 
-    max_price = event_date.get(
-        "max_price"
-    )
+    max_price = event_date.get("max_price")
 
     currency = event_date.get(
         "currency",
@@ -266,18 +195,7 @@ def format_price(
     if min_price is None:
         return None
 
-    if (
-        max_price is not None
-        and max_price != min_price
-    ):
-        return (
-            f"Eintritt: "
-            f"{min_price:g}–{max_price:g} "
-            f"{currency}"
-        )
+    if max_price is not None and max_price != min_price:
+        return f"Eintritt: {min_price:g}–{max_price:g} {currency}"
 
-    return (
-        f"Eintritt: "
-        f"{min_price:g} "
-        f"{currency}"
-    )
+    return f"Eintritt: {min_price:g} {currency}"

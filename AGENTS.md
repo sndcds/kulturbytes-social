@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This repository contains social publishing tools for **Kulturbytes**.
+This repository contains a configurable JSON/content-to-social CLI publisher.
 
-The primary goal is to publish Kulturbytes event data to external social platforms while keeping **Kulturbytes as the source of truth**.
+The core maps structured content into canonical models and publishes through platform adapters. Kulturbytes is one bundled/default source; it remains authoritative for its own event data.
 
 Current targets:
 
@@ -15,6 +15,59 @@ Current targets:
 Agents working in this repository should preserve the same event-selection, enrichment, deduplication, preview, and publishing behavior across all publishers wherever possible.
 
 This file distinguishes current implementation details from requirements for future changes. Known gaps below are not guarantees that the code already satisfies those requirements.
+
+---
+
+## Source and presentation boundaries
+
+Kulturbytes remains the default source. Configured JSON collections are also supported.
+The Kulturbytes-specific API rules below apply inside its adapter, not to generic sources.
+
+- The core must not branch on source names. `DEFAULT_SOURCE` belongs only at the
+  CLI/configuration boundary; core workflows receive an explicit adapter and selector.
+- Source-specific behavior belongs in `SourceDefinition`/adapter capabilities.
+  Generic `skip_past` defaults false; the bundled event source opts in explicitly.
+- The default templates must remain source-neutral. Branded text and tag priority
+  belong in source-specific templates; preserve the Kulturbytes golden outputs.
+- Generic media policy comes from private `SourceContext`, never a global source
+  allowlist. Policy must follow rendered content but never be exposed to templates.
+- Persistence compatibility is hidden behind generic identity/storage interfaces.
+  Legacy schemas, snapshots and content fingerprints must retain their behavior.
+- New content types fitting `ContentItem` must not require new Python classes.
+  Use `location` for canonical place information, not `venue` or raw API names.
+- Generic requests are public HTTPS/443 GETs, with DNS pinning and no automatic
+  redirects. Headers are static and restricted to Accept/User-Agent/X-API-Version;
+  source authentication and HTTP are intentionally unsupported. Use explicit
+  collection/object modes and encode exactly one `{id}` detail path segment.
+- Preserve one transport pool per logical HTTPS origin. Two allowed hosts sharing
+  an IP must never share an IP-keyed TLS session. Check DNS again on every attempt.
+- `publish --platform ...` delegates to existing platform flows; no duplicate
+  credential, confirmation, retry or reservation implementation.
+- Source-specific JSON property names must stay inside source adapters/mappings
+  and the existing Kulturbytes boundary helpers they call.
+- All source data must become `ContentItem` before rendering. Its only required
+  content field is `title`; publishing additionally requires a stable `id`.
+- JMESPath is the supported extraction language. Define generic sources in
+  `sources/*.yaml`; do not add publisher fallback chains such as `title or name or headline`.
+- Jinja2 is the supported presentation system. Use the central `TemplateRenderer`
+  and `templates/<source>/<platform>.j2`, falling back to `templates/default/`.
+- Publishers operate only on `ContentItem`/`RenderedPost` and explicit platform config.
+  Do not read raw JSON paths or instantiate per-publisher Jinja environments.
+- Keep the sandbox restricted to canonical fields and registered safe filters.
+  Templates are trusted admin configuration; content is never executable template code.
+- Keep platform limits outside arbitrary template control. Re-render shortened
+  content fields; never slice the complete post or truncate protected links/hashtags.
+- Generic source HTTP uses a separate client with no social credentials or inherited
+  authenticated state. Mapped image URLs still pass the existing media SSRF path.
+- Root `sources/` and `templates/` are symlinks to common package data. Preserve
+  wheel/sdist inclusion and test installed access outside the checkout. Use deterministic
+  checkout paths or installed XDG configuration; never discover configuration from CWD.
+- `sources list`, `sources show SOURCE` and `sources validate SOURCE` are local, read-only commands.
+- Keep Kulturbytes date IDs and recovery snapshots compatible. Generic publication
+  keys are `<source>:<id>`; old journal column names are internal storage details,
+  not public canonical fields. Do not change the persistence architecture for source work.
+- Preserve the captured Kulturbytes output fixtures in `tests/fixtures/` and run
+  mapping, sandbox, generic CLI and installed-package tests alongside existing tests.
 
 ---
 
@@ -86,7 +139,7 @@ For each selected event fetch:
 GET https://api.kulturbytes.de/api/event/{uuid}/date/{date_slug}
 ```
 
-Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The shared workflow creates a copy with `summary` set from the selected list record (or an empty string), so all platform formatters use list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
+Use the returned `data` object as the canonical source for event metadata and the fallback `description`. The Kulturbytes adapter creates a copy with `summary` set from the selected list record (or an empty string), then maps it into canonical `text` using list summary first and detail description second without modifying the API response objects. Mastodon still applies its platform-specific normalization and length limit.
 
 The discovery response wraps the list in `data.events`; the detail response wraps one event in `data`. The field lists below describe possible fields, not a guaranteed schema. A live sample checked on 2026-09-07 omitted `tags`, `content_language`, `event_types`, and `event_links` from the detail response, and exposed `price_type` at event level. Several optional date fields were also absent. Handle missing fields gracefully; do not infer that missing tags mean the discovery record had no tags. Current formatting reads tags only from the detail object and prices only from `date`.
 
@@ -469,8 +522,9 @@ All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed re
 
 ## Boundary validation, media security and read retries
 
-- `models.py` validates discovery and detail responses with strict Pydantic models;
-  publishers receive `model_dump(exclude_unset=True)` dictionaries for compatibility.
+- `sources/kulturbytes_models.py` validates bundled-source discovery and detail
+  responses with strict Pydantic models. Only the source adapter receives their
+  dictionaries; publishers receive canonical `ContentItem`/`RenderedPost`.
   Model only consumed fields. Optional fields may be absent or null. Identifiers are
   bounded non-empty safe path segments, not UUID objects, to retain opaque/simplified IDs.
 - Invalid discovery envelopes fail; malformed individual records are reported/skipped.
@@ -479,16 +533,17 @@ All publishers use `INSERT ... ON CONFLICT(date_uuid) DO UPDATE`. A confirmed re
   Keep the list-summary/detail-description precedence.
 - `timezone.application_today()` is the only business-day clock and uses Europe/Berlin.
 - All media downloads and Instagram's JPEG check use `media_security.media_response`.
-  The allowlist contains only `api.kulturbytes.de`, HTTPS port 443, based on existing
-  repository media examples. No arbitrary hosts/IP URLs or speculative CDN entries.
+  Allowed hosts come from `SourceContext.media_policy`, default empty. The bundled
+  Kulturbytes YAML allows `api.kulturbytes.de`; other trusted definitions may allow
+  their own hosts. HTTPS port 443 only; no wildcard grants.
   Reject credentials and any DNS answer that is non-global/reserved. Resolve once
   per attempt and give `PublicMediaTransport` the validated numeric TCP destination;
   HTTPcore's `sni_hostname` extension and original Host header preserve certificate
   hostname validation. TLS verification remains on. Never fall back to hostname DNS.
 - A separate media client/HTTPTransport uses `trust_env=False`, no proxy, no API auth
-  or cookies. Every retry/redirect repeats the policy (max five redirects). The single
-  allowed origin prevents IP-keyed TLS pool reuse across different server names;
-  revisit pool isolation before extending the host allowlist. No custom socket code.
+  or inherited cookies. Every retry/redirect repeats the policy (max five redirects).
+  Separate pools per logical HTTPS origin prevent reuse across different TLS server
+  names sharing an IP. No custom socket code.
   Tests exercise the real HTTPX/HTTPcore stack with a fake TCP/TLS backend and a
   rebinding resolver; no real DNS/network. Meta's later Instagram fetch is outside
   the local transport. Do not claim control over it. Issue #6 size limits stay open.
@@ -564,7 +619,7 @@ without credentials/query/fragment). `failed` may release only a reserved
 or publishing attempt with confirmed absence of a remote post. Never automatically
 clear reservations or delete remote posts. See README for operational examples.
 
-## Social hashtags
+## Kulturbytes social hashtags
 
 Use the detailed event field:
 
@@ -934,7 +989,7 @@ API reference: [Meta's Instagram publishing documentation](https://www.postman.c
 
 ## Message composition
 
-Platform-neutral event information is already shared through `kulturbytes_common`; final formatting remains in each platform CLI.
+Platform-neutral content is represented by `ContentItem`. Final text composition lives in the Jinja templates, with the shared renderer enforcing platform limits. The platform builders are thin canonical wrappers around `render_post`.
 
 Existing shared helpers include:
 
@@ -1186,7 +1241,7 @@ src/kulturbytes_social/cli.py   # root Click group and command registration
 src/kulturbytes_social/attempts.py # explicit local publication recovery
 uv.lock                        # shared lockfile
 common/src/kulturbytes_common/
-    events.py                  # API reads, dates, URLs, hashtags, prices
+    sources/kulturbytes_api.py  # bundled source API boundary and metadata
     media.py                   # image URLs and downloads
     formatting.py              # Markdown normalization
     selection.py               # interactive selection
@@ -1196,7 +1251,11 @@ common/src/kulturbytes_common/
     http.py                    # safe GET retries
     media_security.py          # public HTTPS / DNS / redirects
     publications.py            # journal, reservations, recovery
-    workflow.py                # shared filtering and publishing loop
+    sources/                   # ContentItem, YAML/JMESPath and source adapters
+    rendering.py               # sandboxed Jinja and platform text constraints
+    data/                      # packaged sources and templates
+    storage.py                 # compatible platform schemas and journal snapshots
+    workflow.py                # canonical filtering and publishing loop
 facebook/
     src/kulturbytes_facebook/cli.py
 mastodon/
@@ -1207,7 +1266,7 @@ tests/test_publishers.py
 tests/test_instagram.py
 ```
 
-Each platform owns its configuration, final formatting, publication calls, and database schema/writer. The root CLI directly registers `facebook_command`, `mastodon_command`, and `instagram_command`. Credential management remains platform-scoped through the existing options, e.g. `kulturbytes-social facebook --credentials set --credential meta`; do not duplicate credential logic in the root. Tests invoke the root CLI for all platform scenarios. Preserve the dependency direction root → platform → common.
+Each platform owns configuration, previews, confirmation and publication calls. Shared `sources/`, `rendering.py` and `storage.py` own adaptation, text composition and neutral state access. `legacy_storage.py`, `database.py` and `publications.py` retain historical schemas, snapshots and transaction compatibility. The root CLI directly registers `facebook_command`, `mastodon_command`, and `instagram_command`. Credential management remains platform-scoped through the existing options, e.g. `kulturbytes-social facebook --credentials set --credential meta`; do not duplicate credential logic in the root. Tests invoke the root CLI for all platform scenarios. Preserve the dependency direction root → platform → common.
 
 ---
 

@@ -15,9 +15,45 @@ concurrency:
 
 jobs:
   tests:
-    name: Python 3.12 tests
+    name: Python ${{ matrix.python-version }} tests
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        # setup-uv publishes v10.0.1 without a v10 major alias.
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install workspace dependencies
+        run: uv sync --all-packages --locked
+
+      - name: Run unittest suite
+        run: uv run --all-packages --locked python -m unittest discover -s tests -v
+
+      - name: Check whitespace
+        run: git diff --check
+
+  quality:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -30,7 +66,6 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        # setup-uv publishes v10.0.1 without a v10 major alias.
         uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.12"
@@ -38,10 +73,10 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install workspace dependencies
-        run: uv sync --all-packages --frozen
+        run: uv sync --all-packages --locked
 
-      - name: Run unittest suite
-        run: uv run --all-packages --frozen python -m unittest discover -s tests -v
+      - name: Check formatting
+        run: uv run --locked ruff format --check .
 
-      - name: Check whitespace
-        run: git diff --check
+      - name: Check lint
+        run: uv run --locked ruff check .

@@ -1094,7 +1094,8 @@ und [Mastodon](mastodon/README.md#hilfe-bei-problemen).
 
 [Tests](.github/workflows/tests.yml) und [CodeQL](.github/workflows/codeql.yml)
 laufen bei Pushes auf `main` und Pull Requests gegen `main`. Die Tests verwenden
-Python 3.12, den eingefrorenen uv-Lockfile und den vollständigen Unittest-Lauf.
+Python 3.12 und 3.13, den geprüften uv-Lockfile (`--locked`) und den vollständigen
+Unittest-Lauf. Ein eigener Ruff-Job prüft Formatierung, Python-Fehler und Importreihenfolge.
 Nur uv-Abhängigkeiten werden gecacht; Social-Zugangsdaten sind nicht erforderlich.
 
 Die [offizielle CodeQL Action](https://github.com/github/codeql-action) analysiert
@@ -1102,14 +1103,17 @@ Python im gesamten Repository einschließlich aller Workspace-Pakete und Tests,
 ohne Build-Schritt, mit `security-and-quality`-Queries. Ergebnisse erscheinen in
 GitHub Code Scanning. Zusätzlich läuft die Analyse montags um 05:23 UTC.
 Fork-PRs verwenden den regulären `pull_request`-Trigger ohne privilegierten
-`pull_request_target`-Workflow. Verbindliche Merge-Sperren werden separat in den
-Branch-Regeln von GitHub konfiguriert.
+`pull_request_target`-Workflow. Die GitHub-Branch-Regeln für `main` verlangen
+Pull Requests mit aktuellen, erfolgreichen Test-, Ruff- und CodeQL-Checks,
+auch für Administratoren.
 
 Lokale Entsprechung:
 
 ```bash
-uv sync --all-packages --frozen
-uv run --all-packages --frozen python -m unittest discover -s tests -v
+uv sync --all-packages --locked
+uv run --all-packages --locked python -m unittest discover -s tests -v
+uv run --locked ruff format --check .
+uv run --locked ruff check .
 git diff --check
 ```
 
